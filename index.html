@@ -476,10 +476,20 @@ function delRow(){
 /* ================= Bluetooth LE (ESC/POS) ================= */
 /* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
    mengakses layanan yang disebut di sini. */
+/* Semua UUID ditulis lengkap sebagai string - jembatan Bluetooth Bluefy
+   tidak bisa membaca kode angka pendek (0x18F0 dst.). */
 const BLE_SERVICES = [
-  0x18F0,  // ESC/POS-over-BLE standar (char 2AF1)
-  0xAE30,  // printer saku/kucing (char AE01)
-  0xFF00, 0xFF10, 0xFF12, 0xFFD0, 0xFFE0, 0xFFE5, 0xFFF0, 0xABF0, 0xFEE7,
+  "000018f0-0000-1000-8000-00805f9b34fb",  // ESC/POS-over-BLE standar (char 2AF1)
+  "0000ae30-0000-1000-8000-00805f9b34fb",  // printer saku (char AE01)
+  "0000ff00-0000-1000-8000-00805f9b34fb",
+  "0000ff10-0000-1000-8000-00805f9b34fb",
+  "0000ff12-0000-1000-8000-00805f9b34fb",
+  "0000ffd0-0000-1000-8000-00805f9b34fb",
+  "0000ffe0-0000-1000-8000-00805f9b34fb",
+  "0000ffe5-0000-1000-8000-00805f9b34fb",
+  "0000fff0-0000-1000-8000-00805f9b34fb",
+  "0000abf0-0000-1000-8000-00805f9b34fb",
+  "0000fee7-0000-1000-8000-00805f9b34fb",
   "49535343-fe7d-4ae5-8fa9-9fafd205e455",  // ISSC/Microchip UART (Rongta dkk.)
   "e7810a71-73ae-499d-8c15-faa9aef0c3f2",  // Zjiang/Goojprt dkk.
 ];
