@@ -126,6 +126,11 @@
   <pre id="preview"></pre>
 </div>
 
+<details class="card" id="btlog" style="padding:0 0 8px">
+  <summary style="font-size:11px; font-weight:700; color:#6f7680; padding:10px 14px; cursor:pointer">LOG BLUETOOTH (untuk diagnosa)</summary>
+  <pre id="btlogtxt" style="font-family:ui-monospace,Menlo,monospace; font-size:10px; margin:0; padding:0 14px; white-space:pre-wrap; word-break:break-all; color:#6f7680"></pre>
+</details>
+
 <div class="foot">
   <button class="btn" id="btnPrint">CETAK</button>
   <button class="btn" id="btnClear">Bersihkan</button>
@@ -469,50 +474,93 @@ function delRow(){
   setStat("Baris dihapus.","ok");
 }
 /* ================= Bluetooth LE (ESC/POS) ================= */
+/* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
+   mengakses layanan yang disebut di sini. */
 const BLE_SERVICES = [
-  0xFFE0, 0xFF00, 0xFFF0, 0x18F0,
-  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
-  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
-  "0000ffe5-0000-1000-8000-00805f9b34fb",
+  0x18F0,  // ESC/POS-over-BLE standar (char 2AF1)
+  0xAE30,  // printer saku/kucing (char AE01)
+  0xFF00, 0xFF10, 0xFF12, 0xFFD0, 0xFFE0, 0xFFE5, 0xFFF0, 0xABF0, 0xFEE7,
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",  // ISSC/Microchip UART (Rongta dkk.)
+  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",  // Zjiang/Goojprt dkk.
 ];
 let bleDevice = null, bleChar = null;
 
-async function findWritable(server){
-  const services = await server.getPrimaryServices();
-  let fallback = null;
-  for (const s of services){
-    let chars = [];
-    try { chars = await s.getCharacteristics(); } catch(e){ continue; }
-    for (const c of chars){
-      if (c.properties.writeWithoutResponse) return c;
-      if (c.properties.write && !fallback) fallback = c;
-    }
-  }
-  return fallback;
+function blog(msg){
+  const el = $("btlogtxt");
+  el.textContent += msg + "\n";
+}
+function propsOf(c){
+  return ["write","writeWithoutResponse","notify","read","indicate"]
+    .filter(k => c.properties[k]).join(",");
 }
 async function connectBT(){
   if (!navigator.bluetooth){
     setStat("Bluetooth tidak tersedia. Buka halaman ini di aplikasi Bluefy.","err");
     return false;
   }
+  bleChar = null;
   try {
     if (!bleDevice){
+      blog("--- " + new Date().toLocaleTimeString() + " ---");
+      blog("Membuka daftar perangkat...");
       bleDevice = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true, optionalServices: BLE_SERVICES });
+      blog("Dipilih: " + (bleDevice.name || "(tanpa nama)"));
       bleDevice.addEventListener("gattserverdisconnected", () => {
         bleChar = null; $("btnBT").classList.remove("on");
         $("btnBT").innerHTML = "&#9679; Hubungkan";
+        blog("Perangkat terputus.");
       });
     }
-    const server = await bleDevice.gatt.connect();
-    bleChar = await findWritable(server);
-    if (!bleChar){ setStat("Printer tidak punya jalur tulis BLE.","err"); return false; }
+    let server = null, lastErr = null;
+    for (let i = 1; i <= 3 && !server; i++){
+      try {
+        blog("Menghubungkan GATT (percobaan " + i + ")...");
+        server = await bleDevice.gatt.connect();
+      } catch(e){
+        lastErr = e;
+        blog("  gagal: " + e.name + " - " + e.message);
+        await sleep(900);
+      }
+    }
+    if (!server) throw lastErr;
+    blog("GATT terhubung. Mencari layanan...");
+    let services = [];
+    try { services = await server.getPrimaryServices(); }
+    catch(e){ blog("getPrimaryServices: " + e.name + " - " + e.message); }
+    blog("Layanan terlihat: " + services.length);
+    let fallback = null;
+    for (const s of services){
+      blog("svc " + s.uuid);
+      let chars = [];
+      try { chars = await s.getCharacteristics(); }
+      catch(e){ blog("  (karakteristik: " + e.message + ")"); continue; }
+      for (const c of chars){
+        blog("  chr " + c.uuid + " [" + propsOf(c) + "]");
+        if (c.properties.writeWithoutResponse && !bleChar) bleChar = c;
+        if (c.properties.write && !fallback) fallback = c;
+      }
+    }
+    if (!bleChar) bleChar = fallback;
+    if (!bleChar){
+      blog("Tidak ditemukan jalur tulis.");
+      setStat("Layanan printer tidak dikenali - buka LOG BLUETOOTH di bawah "
+              + "dan kirimkan isinya.","err");
+      $("btlog").open = true;
+      return false;
+    }
+    blog("Dipakai: chr " + bleChar.uuid);
     $("btnBT").classList.add("on");
     $("btnBT").innerHTML = "&#9679; " + (bleDevice.name || "Terhubung");
     setStat("Printer terhubung.","ok");
     return true;
   } catch(e){
-    if (e.name !== "NotFoundError") setStat("Gagal terhubung: " + e.message, "err");
+    if (e && e.name === "NotFoundError"){ setStat("Dibatalkan."); return false; }
+    blog("ERROR: " + (e ? e.name + " - " + e.message : "tidak diketahui"));
+    setStat("Gagal terhubung (" + (e ? e.name : "?") + ") - buka LOG BLUETOOTH "
+            + "di bawah dan kirimkan isinya.","err");
+    $("btlog").open = true;
+    bleDevice = null;  // mulai bersih pada percobaan berikutnya
     return false;
   }
 }
@@ -537,6 +585,7 @@ async function bleWrite(bytes){
       }
       return;
     } catch(e){
+      blog("tulis gagal (potongan " + chunk + "): " + e.name + " - " + e.message);
       if (attempt === 0){ chunk = 20; await sleep(300); } // coba potongan kecil
       else throw e;
     }
