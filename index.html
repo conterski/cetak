@@ -73,6 +73,26 @@
   #btnClear{background:var(--seg); color:var(--text); font-size:14px; padding:14px 16px}
   #stat{flex:1; font-size:12px; color:var(--muted); text-align:right}
   #stat.ok{color:var(--ok)} #stat.err{color:var(--err)}
+  /* ====== layar sempit (HP): kartu menumpuk (default) ====== */
+  .calcCap{display:none}
+  /* ====== layar lebar (desktop): kalkulator kiri, pratinjau kanan ====== */
+  @media (min-width:768px){
+    body{padding-bottom:0}
+    #stage{display:flex; gap:14px; align-items:stretch; margin:6px 14px}
+    #stage>.card{margin:0}
+    #panelText{flex:1.3 1 0; display:flex; flex-direction:column}
+    #panelText textarea{flex:1 1 auto; min-height:0}
+    #panelCalc{flex:0 0 360px; display:flex; flex-direction:column}
+    #panelCalc #calcKeys{flex:1 1 auto; display:flex; flex-direction:column}
+    #panelCalc #pad{flex:1 1 auto; grid-auto-rows:1fr}
+    #previewCard{flex:1 1 0; display:flex; flex-direction:column; min-height:0}
+    #previewCard .cap{flex:0 0 auto}
+    #previewCard #preview{flex:1 1 0; min-height:0; overflow:auto}
+    .calcCap{display:block}
+    #btlog{display:none}
+    /* di desktop numpad TIDAK menempel ke bawah layar */
+    body.calc #calcKeys{border:0; box-shadow:none}
+  }
 </style>
 </head>
 <body>
@@ -95,12 +115,15 @@
   <button class="btn tog" id="togAuto" style="display:none">Auto-cetak</button>
 </div>
 
+<div id="stage">
+
 <div class="card" id="panelText">
   <div class="cap" id="capText">KETIK PESANAN — SATU BARANG PER BARIS</div>
   <textarea id="txt" placeholder="Besi beton 8 mm 10 btg&#10;Semen 5 sak&#10;Gypsum 6 lbr"></textarea>
 </div>
 
 <div class="card" id="panelCalc" style="display:none">
+  <div class="cap calcCap">KALKULATOR PITA</div>
   <div id="calcNav">
     <button class="btn" id="btnPrev">&#9664;</button>
     <span id="tapeLbl">Pita 1/1</span>
@@ -138,6 +161,8 @@
   <div class="cap">PRATINJAU</div>
   <pre id="preview"></pre>
 </div>
+
+</div><!-- /stage -->
 
 <details class="card" id="btlog" style="padding:0 0 8px">
   <summary style="font-size:11px; font-weight:700; color:#6f7680; padding:10px 14px; cursor:pointer">LOG BLUETOOTH (untuk diagnosa)</summary>
@@ -414,10 +439,23 @@ function updatePreview(){
     pv.textContent = currentDraft();
   }
 }
-/* atur numpad menempel di bawah & tinggi jendela pita mengisi sisa ruang */
+/* ====== layout responsif ====== */
+const mqDesktop = window.matchMedia("(min-width:768px)");
+const isDesktop = () => mqDesktop.matches;
+
+/* desktop: tinggi panggung mengisi ruang sampai bilah CETAK, agar
+   kalkulator (kiri) & pratinjau (kanan) sama tinggi & sejajar */
+function layoutDesktop(){
+  const stage = $("stage");
+  if (!isDesktop()){ stage.style.height = ""; return; }
+  const footH = document.querySelector(".foot").getBoundingClientRect().height;
+  const top = stage.getBoundingClientRect().top;
+  stage.style.height = Math.max(340, Math.floor(window.innerHeight - top - footH - 12)) + "px";
+}
+/* HP: numpad menempel di bawah & tinggi jendela pita mengisi sisa ruang */
 function layoutCalc(){
   const keys = $("calcKeys"), pv = $("preview");
-  if (mode !== "calc"){
+  if (!(mode === "calc" && !isDesktop())){
     keys.style.position = keys.style.left = keys.style.right =
       keys.style.bottom = keys.style.zIndex = "";
     pv.style.height = "";
@@ -432,7 +470,27 @@ function layoutCalc(){
   const keysTop = keys.getBoundingClientRect().top;
   pv.style.height = Math.max(80, Math.floor(keysTop - top - 8)) + "px";
 }
-window.addEventListener("resize", () => { if (mode === "calc") layoutCalc(); });
+/* letak kartu pratinjau: HP+kalkulator -> di atas numpad; selain itu -> kolom kanan */
+function placePreview(){
+  const pc = $("previewCard");
+  if (mode === "calc" && !isDesktop()){
+    pc.classList.add("calc");
+    $("panelCalc").insertBefore(pc, $("calcKeys"));
+  } else {
+    pc.classList.remove("calc");
+    $("stage").appendChild(pc);
+  }
+}
+function relayout(){
+  document.body.classList.toggle("calc", mode === "calc" && !isDesktop());
+  placePreview();
+  layoutDesktop();
+  updatePreview();
+  layoutCalc();
+  requestAnimationFrame(() => { layoutDesktop(); layoutCalc(); });
+}
+mqDesktop.addEventListener("change", relayout);
+window.addEventListener("resize", () => { layoutDesktop(); if (mode === "calc") layoutCalc(); });
 function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 
 function refreshToggles(){
@@ -453,23 +511,11 @@ function applyMode(){
   $("panelCalc").style.display = mode === "calc" ? "" : "none";
   $("capText").textContent = mode === "plain"
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
-  // pindahkan pratinjau: di mode kalkulator, taruh di atas numpad (jendela pita);
-  // di mode lain, kembalikan sebagai kartu biasa
-  const pc = $("previewCard");
-  if (mode === "calc"){
-    pc.classList.add("calc");
-    $("panelCalc").insertBefore(pc, $("calcKeys"));
-  } else {
-    pc.classList.remove("calc");
-    $("btlog").parentNode.insertBefore(pc, $("btlog"));
-  }
-  document.body.classList.toggle("calc", mode === "calc");
   $("togAuto").style.display = mode === "calc" ? "" : "none";
   $("btlog").style.display = mode === "calc" ? "none" : "";
   if (mode === "calc") keyCA(true);
-  refreshToggles(); refreshCalcHead(); updatePreview();
-  layoutCalc();
-  requestAnimationFrame(layoutCalc);  // penyempurnaan setelah reflow (jika aktif)
+  refreshToggles(); refreshCalcHead();
+  relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
 }
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; }
