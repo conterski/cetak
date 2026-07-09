@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Cetak Draft Pesanan</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --border:#e2e4e8; --accent:#2563eb;
+    --accent-dark:#1e50c8; --text:#1f2328; --muted:#6f7680;
+    --ok:#15803d; --err:#b91c1c; --seg:#e8eaee; --on:#dbe7ff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; background:var(--bg); color:var(--text);
+       font-family:-apple-system,"Segoe UI",sans-serif; padding-bottom:90px}
+  .top{display:flex; align-items:center; gap:8px; padding:12px 14px 6px}
+  .top h1{font-size:17px; margin:0; flex:1}
+  .btn{border:0; border-radius:10px; cursor:pointer; font-family:inherit}
+  #btnBT{background:var(--seg); color:var(--muted); padding:9px 12px; font-size:13px; font-weight:600}
+  #btnBT.on{background:var(--on); color:var(--accent)}
+  .rowbar{display:flex; gap:6px; padding:6px 14px; flex-wrap:wrap}
+  .seg{display:flex; background:var(--seg); border-radius:10px; padding:3px}
+  .seg .btn{background:transparent; color:var(--muted); padding:8px 14px; font-size:13px}
+  .seg .btn.act{background:var(--card); color:var(--accent); font-weight:700}
+  .tog{background:var(--seg); color:var(--muted); padding:8px 12px; font-size:13px}
+  .tog.act{background:var(--on); color:var(--accent); font-weight:700}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:14px;
+        margin:6px 14px; overflow:hidden}
+  .card .cap{font-size:10px; font-weight:700; color:var(--muted); padding:10px 14px 2px;
+             letter-spacing:.4px}
+  textarea{width:100%; border:0; outline:none; font:inherit; font-size:16px;
+           padding:8px 14px 12px; min-height:170px; resize:vertical; background:transparent}
+  /* kalkulator */
+  #calcNav{display:flex; align-items:center; gap:6px; padding:8px 14px 0; font-size:12px; color:var(--muted)}
+  #calcNav .btn{background:transparent; color:var(--muted); font-size:15px; padding:4px 8px}
+  #btnHist{margin-left:auto; font-size:11px; color:var(--muted); background:transparent}
+  #calcTotal{padding:2px 14px; text-align:right; color:var(--accent); font-weight:700; font-size:15px}
+  .inrow{display:flex; gap:8px; padding:6px 14px}
+  .inrow input{border:1px solid var(--border); border-radius:10px; background:#f7f8fa;
+               font-family:ui-monospace,Menlo,monospace; outline:none; padding:10px}
+  #inDate{width:88px; font-size:15px; text-align:center}
+  #inAmt{flex:1; font-size:22px; text-align:right; min-width:0}
+  #editBar{display:none; margin:0 14px; padding:8px 12px; background:var(--on); color:var(--accent);
+           border-radius:10px; font-size:13px; font-weight:600; align-items:center; gap:8px}
+  #editBar .btn{padding:6px 10px; font-size:12px}
+  #btnDelRow{background:#fde8e8; color:var(--err)}
+  #btnCancelEdit{background:var(--card); color:var(--muted)}
+  #pad{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:8px 14px 14px}
+  #pad .btn{padding:14px 0; font-size:18px; font-weight:600; background:#f1f2f5; color:var(--text)}
+  #pad .btn.acc{background:var(--on); color:var(--accent)}
+  #pad .btn.dan{background:#fde8e8; color:var(--err)}
+  #pad .btn:active{filter:brightness(.92)}
+  /* pratinjau */
+  #preview{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; line-height:1.5;
+           padding:8px 14px 12px; margin:0; overflow-x:auto; min-height:60px}
+  #preview .row{display:inline}
+  #preview .row.sel{background:var(--on); color:var(--accent); border-radius:4px}
+  .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
+        border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
+        padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
+  #btnPrint{background:var(--accent); color:#fff; font-size:16px; font-weight:700; padding:14px 26px}
+  #btnPrint:disabled{opacity:.5}
+  #btnClear{background:var(--seg); color:var(--text); font-size:14px; padding:14px 16px}
+  #stat{flex:1; font-size:12px; color:var(--muted); text-align:right}
+  #stat.ok{color:var(--ok)} #stat.err{color:var(--err)}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>Cetak Draft Pesanan</h1>
+  <button class="btn" id="btnBT">&#9679; Hubungkan</button>
+</div>
+
+<div class="rowbar">
+  <div class="seg" id="segMode">
+    <button class="btn" data-m="table">Tabel</button>
+    <button class="btn" data-m="plain">Teks polos</button>
+    <button class="btn" data-m="calc">Kalkulator</button>
+  </div>
+</div>
+<div class="rowbar">
+  <button class="btn tog" id="togNum">Nomor urut</button>
+  <button class="btn tog" id="togHead">Tanggal &amp; garis</button>
+</div>
+
+<div class="card" id="panelText">
+  <div class="cap" id="capText">KETIK PESANAN — SATU BARANG PER BARIS</div>
+  <textarea id="txt" placeholder="Besi beton 8 mm 10 btg&#10;Semen 5 sak&#10;Gypsum 6 lbr"></textarea>
+</div>
+
+<div class="card" id="panelCalc" style="display:none">
+  <div id="calcNav">
+    <button class="btn" id="btnPrev">&#9664;</button>
+    <span id="tapeLbl">Pita 1/1</span>
+    <button class="btn" id="btnNext">&#9654;</button>
+    <button class="btn" id="btnHist">Hapus riwayat</button>
+  </div>
+  <div id="calcTotal">Total: 0 (0 item)</div>
+  <div class="inrow">
+    <input id="inDate" placeholder="Tgl" maxlength="8" inputmode="numeric">
+    <input id="inAmt" placeholder="0" inputmode="decimal">
+  </div>
+  <div id="editBar"><span id="editLbl"></span>
+    <button class="btn" id="btnDelRow">Hapus</button>
+    <button class="btn" id="btnCancelEdit">Batal</button>
+  </div>
+  <div id="pad">
+    <button class="btn dan" data-k="C">C</button>
+    <button class="btn" data-k="BS">&#9003;</button>
+    <button class="btn" data-k="SUB">SUB</button>
+    <button class="btn acc" data-k="TOT">TOTAL</button>
+    <button class="btn" data-k="7">7</button><button class="btn" data-k="8">8</button>
+    <button class="btn" data-k="9">9</button><button class="btn acc" data-k="+">+</button>
+    <button class="btn" data-k="4">4</button><button class="btn" data-k="5">5</button>
+    <button class="btn" data-k="6">6</button><button class="btn" data-k="-">&#8722;</button>
+    <button class="btn" data-k="1">1</button><button class="btn" data-k="2">2</button>
+    <button class="btn" data-k="3">3</button><button class="btn" data-k="00">00</button>
+    <button class="btn" data-k="0">0</button><button class="btn" data-k="000">000</button>
+    <button class="btn" data-k=".">.</button><button class="btn dan" data-k="CA">CA</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="cap">PRATINJAU</div>
+  <pre id="preview"></pre>
+</div>
+
+<div class="foot">
+  <button class="btn" id="btnPrint">CETAK</button>
+  <button class="btn" id="btnClear">Bersihkan</button>
+  <div id="stat">Siap.</div>
+</div>
+
+<script>
+"use strict";
+/* ================= format (port dari printapp.py) ================= */
+const COLS = 31, FEED_LINES = 4, LEFT_MARGIN_DOTS = 12;
+
+const UNITS = new Set(["btg","btng","batang","bh","buah","bj","biji","lbr","lembar",
+ "lmbr","sak","zak","kg","ons","gr","gram","ltr","lt","liter","gln","galon","m","mtr",
+ "meter","m2","m3","kubik","kbk","roll","rol","dus","box","pcs","pc","pak","pack",
+ "ikat","keping","kaleng","klg","set","unit","pasang","psg","btl","botol","ember",
+ "drum","karung","krg","lusin","kodi","rim","papan"]);
+
+const QTY_RE=/^\d+(?:[.,\/]\d+)?$/, UNIT_RE=/^[A-Za-z]{1,8}$/,
+ GLUED_RE=/^(\d+(?:[.,\/]\d+)?)([A-Za-z][A-Za-z0-9]{0,7})$/,
+ NOTE_RE=/\(\s*([^()]*?)\s*\)\s*$/,
+ LIST_PREFIX_RE=/^\d{1,2}\s*[.)]+\s*(?=[^\d\s])/,
+ COMMA_PREFIX_RE=/^\d{1,2},(?=[A-Za-z])/,
+ EQ_QTY_RE=/^(.+?)\s*=\s*(\d+(?:[.,\/]\d+)?)$/,
+ QTY_FIRST_RE=/^(\d+(?:[.,\/]\d+)?)\s*([A-Za-z][A-Za-z0-9]{0,7})\s+(.+)$/;
+
+const norm = s => s.trim().split(/\s+/).join(" ");
+
+function cleanItem(item){
+  item = item.replace(/\s*\.{2,}\s*/g," ").replace(/(^|\s)\.+(?=[A-Za-z0-9])/g,"$1");
+  item = item.replace(/^[\s.,\-_]+|[\s.,\-_]+$/g,"");
+  return norm(item);
+}
+function tryQtyFirst(s){
+  const m = s.match(QTY_FIRST_RE);
+  if (m && UNITS.has(m[2].toLowerCase())) return [m[3], m[1], m[2]];
+  return null;
+}
+function tryQtyLast(s){
+  const t = s.split(/\s+/).filter(Boolean);
+  if (t.length>=3 && QTY_RE.test(t[t.length-2]) && UNIT_RE.test(t[t.length-1]))
+    return [t.slice(0,-2).join(" "), t[t.length-2], t[t.length-1]];
+  if (t.length>=2){
+    const m = t[t.length-1].match(GLUED_RE);
+    if (m && (/^[A-Za-z]+$/.test(m[2]) || UNITS.has(m[2].toLowerCase())))
+      return [t.slice(0,-1).join(" "), m[1], m[2]];
+  }
+  return null;
+}
+function parseLine(line, expectedNo){
+  let s = norm(line), note = null;
+  const nm = s.match(NOTE_RE);
+  if (nm){ note = nm[1]; s = s.slice(0, nm.index).trim(); }
+  s = s.replace(LIST_PREFIX_RE,"").replace(COMMA_PREFIX_RE,"");
+  if (expectedNo != null){
+    const g = s.match(/^(\d{1,2})(?=[A-Za-z])/);
+    if (g && parseInt(g[1]) === expectedNo) s = s.slice(g[1].length);
+  }
+  let parsed = tryQtyFirst(s);
+  if (!parsed && expectedNo != null){
+    const t = s.split(/\s+/).filter(Boolean);
+    if (t.length>=2 && /^\d+$/.test(t[0]) && parseInt(t[0])===expectedNo && !tryQtyFirst(s)){
+      const rest = t.slice(1).join(" ");
+      if (EQ_QTY_RE.test(rest) || tryQtyLast(rest) || tryQtyFirst(rest)){
+        s = rest; parsed = tryQtyFirst(s);
+      }
+    }
+  }
+  if (!parsed){ const m = s.match(EQ_QTY_RE); if (m) parsed = [m[1], m[2], ""]; }
+  if (!parsed) parsed = tryQtyLast(s);
+  let [item, qty, unit] = parsed || [s, null, null];
+  item = cleanItem(item);
+  if (note) item = (item + " (" + note + ")").trim();
+  return [item, qty, unit];
+}
+function wrapWords(text, width){
+  const words = text.split(/\s+/).filter(Boolean), lines = [];
+  let cur = "";
+  for (let w of words){
+    if (!cur) cur = w;
+    else if (cur.length + 1 + w.length <= width) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+    while (cur.length > width){ lines.push(cur.slice(0,width)); cur = cur.slice(width); }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
+}
+function pad2(n){ return String(n).padStart(2,"0"); }
+function headerLines(now, cols){
+  const stamp = `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()} ` +
+                `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const pad = Math.max(0, Math.floor((cols - stamp.length)/2));
+  return [" ".repeat(pad) + stamp, "-".repeat(cols)];
+}
+function renderTable(rows, numbered, cols, now, headers){
+  const out = [];
+  if (headers) out.push(...headerLines(now, cols));
+  if (rows.length){
+    const qtyW = rows.reduce((w,r)=> r[1] ? Math.max(w, r[1].length) : w, 3);
+    const unitW = rows.reduce((w,r)=> r[2] ? Math.max(w, r[2].length) : w, 4);
+    const noW = numbered ? String(rows.length).length + 1 : 0;
+    if (headers){
+      let h = numbered ? "No".padEnd(noW) + " " : "";
+      h += "Qty".padStart(qtyW) + " " + "Unit".padEnd(unitW) + " Item";
+      out.push(h.slice(0, cols), "-".repeat(cols));
+    }
+    const prefixW = (numbered ? noW + 1 : 0) + qtyW + 1 + unitW + 1;
+    const itemW = Math.max(cols - prefixW, 8);
+    rows.forEach((r, idx) => {
+      const [item, qty, unit] = r;
+      const no = numbered ? (String(idx+1)+".").padEnd(noW) + " " : "";
+      if (qty != null){
+        const first = no + qty.padStart(qtyW) + " " + (unit||"").padEnd(unitW) + " ";
+        const ch = wrapWords(item, itemW);
+        out.push((first + ch[0]).replace(/\s+$/,""));
+        for (let c of ch.slice(1)) out.push(" ".repeat(prefixW) + c);
+      } else {
+        const ch = wrapWords(item, cols - no.length);
+        out.push((no + ch[0]).replace(/\s+$/,""));
+        for (let c of ch.slice(1)) out.push(" ".repeat(no.length) + c);
+      }
+    });
+  }
+  if (headers) out.push("-".repeat(cols));
+  return out.join("\n");
+}
+function formatPlain(text, numbered, cols, now, headers){
+  const out = [];
+  if (headers) out.push(...headerLines(now, cols));
+  let lines = text.split("\n").map(l => l.replace(/\s+$/,""));
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines[lines.length-1].trim()) lines.pop();
+  let n = 0, prevBlank = false;
+  for (let line of lines){
+    if (!line.trim()){ if (!prevBlank) out.push(""); prevBlank = true; continue; }
+    prevBlank = false; line = norm(line);
+    let prefix = "";
+    if (numbered){ n += 1; prefix = n + ". "; }
+    const indent = numbered ? prefix.length : 2;
+    const ch = wrapWords(line, cols - indent);
+    out.push(prefix + ch[0]);
+    for (let c of ch.slice(1)) out.push(" ".repeat(indent) + c);
+  }
+  if (headers) out.push("-".repeat(cols));
+  return out.join("\n");
+}
+function formatDraft(text, numbered, cols, now, plain, headers){
+  if (plain) return formatPlain(text, numbered, cols, now, headers);
+  const rows = []; let pos = 0;
+  for (let l of text.split("\n")){
+    if (!l.trim()){ pos = 0; continue; }
+    pos += 1; rows.push(parseLine(l, pos));
+  }
+  return renderTable(rows, numbered, cols, now, headers);
+}
+/* ---- kalkulator ---- */
+function parseAmount(s){
+  s = s.trim().replace(/,/g,"");
+  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+  const v = parseFloat(s);
+  return isNaN(v) ? null : v;
+}
+function fmtAmount(v){
+  const neg = v < 0;
+  let s = Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  if (s.endsWith(".00")) s = s.slice(0,-3);
+  return (neg ? "-" : "") + s;
+}
+function resolveTape(events){
+  let total = 0, count = 0;
+  const res = [];
+  for (const ev of events){
+    if (ev[0]==="e"){ total += ev[2]==="+" ? ev[1] : -ev[1]; count++; res.push(ev); }
+    else if (ev[0]==="s") res.push(["s", total]);
+    else if (ev[0]==="c"){ res.push(["c"]); total = 0; count = 0; }
+    else if (ev[0]==="t"){ res.push(["t", total, count]); total = 0; count = 0; }
+  }
+  return [res, total, count];
+}
+function renderCalcTape(events, numbered, cols, now, headers){
+  const [res] = resolveTape(events);
+  const out = [], lineMap = {};
+  if (headers) out.push(...headerLines(now, cols));
+  const entries = res.filter(op => op[0]==="e");
+  const dateW = entries.reduce((w,op)=> op[3] ? Math.max(w, op[3].length) : w, 0);
+  let n = 0, maxN = 0;
+  for (const op of res){
+    if (op[0]==="e"){ n++; maxN = Math.max(maxN, n); }
+    else if (op[0]==="t" || op[0]==="c") n = 0;
+  }
+  const noW = (numbered && maxN) ? String(maxN).length + 1 : 0;
+  n = 0;
+  res.forEach((op, i) => {
+    if (op[0]==="e"){
+      n++;
+      let prefix = numbered ? (n+".").padEnd(noW) : "";
+      if (dateW) prefix += (prefix ? " " : "") + (op[3]||"").padEnd(dateW);
+      const amt = fmtAmount(op[1]);
+      lineMap[out.length] = i;
+      out.push(prefix + amt.padStart(Math.max(cols - prefix.length - 2, amt.length)) + " " + op[2]);
+    } else if (op[0]==="s"){
+      out.push(fmtAmount(op[1]).padStart(cols-2) + " S");
+    } else if (op[0]==="c"){
+      out.push("0".padStart(cols-2) + " C"); n = 0;
+    } else {
+      out.push(`(${op[2]} item)`.padStart(cols));
+      out.push("-".repeat(14).padStart(cols));
+      out.push(fmtAmount(op[1]).padStart(cols-2) + " *");
+      out.push(""); n = 0;
+    }
+  });
+  if (headers) out.push("-".repeat(cols));
+  return [out.join("\n"), lineMap];
+}
+/* ================= status & state ================= */
+const $ = id => document.getElementById(id);
+const statEl = $("stat");
+function setStat(msg, cls){ statEl.textContent = msg; statEl.className = cls || ""; }
+
+let mode = localStorage.cdp_mode || "table";
+let numbered = localStorage.cdp_num !== "0";
+let headers = localStorage.cdp_head !== "0";
+let tapes = [[["c"]]], active = 0, sel = null;
+try {
+  const t = JSON.parse(localStorage.cdp_tapes || "null");
+  if (Array.isArray(t) && t.length) tapes = t.slice(-6);
+} catch(e){}
+active = tapes.length - 1;
+$("txt").value = localStorage.cdp_text || "";
+
+const curTape = () => tapes[active];
+function saveAll(){
+  localStorage.cdp_mode = mode; localStorage.cdp_num = numbered ? "1" : "0";
+  localStorage.cdp_head = headers ? "1" : "0";
+  localStorage.cdp_text = $("txt").value;
+  localStorage.cdp_tapes = JSON.stringify(tapes);
+}
+/* ================= pratinjau & UI ================= */
+let lineMap = {};
+function currentDraft(){
+  if (mode === "calc")
+    return renderCalcTape(curTape(), numbered, COLS, new Date(), headers)[0];
+  return formatDraft($("txt").value, numbered, COLS, new Date(), mode==="plain", headers);
+}
+function updatePreview(){
+  const pv = $("preview");
+  if (mode === "calc"){
+    const [text, lmap] = renderCalcTape(curTape(), numbered, COLS, new Date(), headers);
+    lineMap = lmap;
+    const lines = text.split("\n");
+    pv.innerHTML = lines.map((l, i) => {
+      if (lineMap[i] !== undefined){
+        const cls = lineMap[i] === sel ? "row sel" : "row";
+        return `<span class="${cls}" data-i="${lineMap[i]}">${escapeHtml(l)}</span>`;
+      }
+      return escapeHtml(l);
+    }).join("\n");
+  } else {
+    lineMap = {};
+    pv.textContent = currentDraft();
+  }
+}
+function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+function refreshToggles(){
+  $("togNum").classList.toggle("act", numbered);
+  $("togHead").classList.toggle("act", headers);
+  document.querySelectorAll("#segMode .btn").forEach(b =>
+    b.classList.toggle("act", b.dataset.m === mode));
+}
+function refreshCalcHead(){
+  const [, sum, count] = resolveTape(curTape());
+  $("calcTotal").textContent = `Total: ${fmtAmount(sum)} (${count} item)`;
+  const hist = active === tapes.length-1 ? "" : " (riwayat)";
+  $("tapeLbl").textContent = `Pita ${active+1}/${tapes.length}${hist}`;
+}
+function applyMode(){
+  $("panelText").style.display = mode === "calc" ? "none" : "";
+  $("panelCalc").style.display = mode === "calc" ? "" : "none";
+  $("capText").textContent = mode === "plain"
+    ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
+  if (mode === "calc") keyCA(true);
+  refreshToggles(); refreshCalcHead(); updatePreview();
+}
+/* ================= kalkulator: aksi ================= */
+function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; }
+function selectRow(i){
+  sel = i;
+  const ev = curTape()[i];
+  $("inAmt").value = fmtAmount(ev[1]);
+  $("inDate").value = ev[3] || "";
+  let no = 0;
+  for (let j = 0; j <= i; j++){
+    const e2 = curTape()[j];
+    if (e2[0]==="e") no++;
+    else if (e2[0]==="t" || e2[0]==="c") no = 0;
+  }
+  $("editLbl").textContent = `Edit baris ${no}`;
+  $("editBar").style.display = "flex";
+  updatePreview();
+}
+function liveComma(){
+  const el = $("inAmt");
+  let raw = el.value.replace(/,/g,"");
+  if (!raw || raw === "." || !/^\d*\.?\d*$/.test(raw)) return;
+  const [ip, dec] = raw.split(".");
+  let f = ip ? parseInt(ip).toLocaleString("en-US") : "";
+  if (raw.includes(".")) f += "." + (dec || "");
+  if (f !== el.value) el.value = f;
+}
+function commit(op){
+  const v = parseAmount($("inAmt").value);
+  if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
+  const ev = ["e", v, op, $("inDate").value.trim()];
+  if (sel !== null){ curTape()[sel] = ev; clearSel(); setStat("Baris diperbarui.","ok"); }
+  else { curTape().push(ev); $("inAmt").value = ""; setStat("Siap."); }
+  refreshCalcHead(); updatePreview(); saveAll();
+}
+function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); }
+function keyTot(){
+  clearSel();
+  const [, , count] = resolveTape(curTape());
+  if (!count) return;
+  curTape().push(["t"]);
+  refreshCalcHead(); updatePreview(); saveAll();
+}
+function keyCA(silent){
+  clearSel();
+  const newest = tapes[tapes.length-1];
+  if (newest.some(ev => ev[0]==="e")){
+    tapes.push([["c"]]);
+    while (tapes.length > 6) tapes.shift();
+  }
+  active = tapes.length - 1;
+  refreshCalcHead(); updatePreview(); saveAll();
+  if (!silent) setStat("Pita baru.");
+}
+function delRow(){
+  if (sel === null) return;
+  curTape().splice(sel, 1);
+  clearSel(); refreshCalcHead(); updatePreview(); saveAll();
+  setStat("Baris dihapus.","ok");
+}
+/* ================= Bluetooth LE (ESC/POS) ================= */
+const BLE_SERVICES = [
+  0xFFE0, 0xFF00, 0xFFF0, 0x18F0,
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+  "0000ffe5-0000-1000-8000-00805f9b34fb",
+];
+let bleDevice = null, bleChar = null;
+
+async function findWritable(server){
+  const services = await server.getPrimaryServices();
+  let fallback = null;
+  for (const s of services){
+    let chars = [];
+    try { chars = await s.getCharacteristics(); } catch(e){ continue; }
+    for (const c of chars){
+      if (c.properties.writeWithoutResponse) return c;
+      if (c.properties.write && !fallback) fallback = c;
+    }
+  }
+  return fallback;
+}
+async function connectBT(){
+  if (!navigator.bluetooth){
+    setStat("Bluetooth tidak tersedia. Buka halaman ini di aplikasi Bluefy.","err");
+    return false;
+  }
+  try {
+    if (!bleDevice){
+      bleDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true, optionalServices: BLE_SERVICES });
+      bleDevice.addEventListener("gattserverdisconnected", () => {
+        bleChar = null; $("btnBT").classList.remove("on");
+        $("btnBT").innerHTML = "&#9679; Hubungkan";
+      });
+    }
+    const server = await bleDevice.gatt.connect();
+    bleChar = await findWritable(server);
+    if (!bleChar){ setStat("Printer tidak punya jalur tulis BLE.","err"); return false; }
+    $("btnBT").classList.add("on");
+    $("btnBT").innerHTML = "&#9679; " + (bleDevice.name || "Terhubung");
+    setStat("Printer terhubung.","ok");
+    return true;
+  } catch(e){
+    if (e.name !== "NotFoundError") setStat("Gagal terhubung: " + e.message, "err");
+    return false;
+  }
+}
+function escposPayload(text){
+  const head = [0x1b,0x40, 0x1d,0x4c, LEFT_MARGIN_DOTS & 0xff, LEFT_MARGIN_DOTS >> 8];
+  const body = [];
+  for (const ch of text.replace(/[^\x00-\x7f]/g,"?")) body.push(ch.charCodeAt(0));
+  for (let i = 0; i < FEED_LINES; i++) body.push(0x0a);
+  return new Uint8Array([...head, ...body]);
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function bleWrite(bytes){
+  let chunk = 100;
+  for (let attempt = 0; attempt < 2; attempt++){
+    try {
+      for (let i = 0; i < bytes.length; i += chunk){
+        const part = bytes.slice(i, i + chunk);
+        if (bleChar.properties.writeWithoutResponse)
+          await bleChar.writeValueWithoutResponse(part);
+        else await bleChar.writeValue(part);
+        await sleep(25);
+      }
+      return;
+    } catch(e){
+      if (attempt === 0){ chunk = 20; await sleep(300); } // coba potongan kecil
+      else throw e;
+    }
+  }
+}
+/* ================= tombol utama ================= */
+async function doPrint(){
+  const hasContent = mode === "calc"
+    ? curTape().some(ev => ev[0]==="e") : $("txt").value.trim() !== "";
+  if (!hasContent){ setStat("Tidak ada yang dicetak.","err"); return; }
+  let summary;
+  if (mode === "calc"){
+    const [res, sum] = resolveTape(curTape());
+    summary = `${res.filter(o=>o[0]==="e").length} baris, total ${fmtAmount(sum)}`;
+  } else {
+    summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
+  }
+  if (!confirm(`Cetak ke printer?\n${summary}`)) { setStat("Dibatalkan."); return; }
+  if (!bleChar || !bleDevice?.gatt?.connected){
+    if (!await connectBT()) return;
+  }
+  const btn = $("btnPrint");
+  btn.disabled = true; setStat("Mengirim...");
+  try {
+    await bleWrite(escposPayload(currentDraft()));
+    setStat("Terkirim ✓","ok");
+    saveAll();
+  } catch(e){
+    setStat("Gagal mencetak: " + e.message, "err");
+  } finally { btn.disabled = false; }
+}
+function doClear(){
+  const hasContent = mode === "calc"
+    ? curTape().some(ev => ev[0]!=="c") : $("txt").value.trim() !== "";
+  if (hasContent && !confirm("Hapus isi tampilan ini?")) return;
+  if (mode === "calc"){ curTape().length = 0; curTape().push(["c"]); clearSel(); }
+  else $("txt").value = "";
+  refreshCalcHead(); updatePreview(); saveAll(); setStat("Siap.");
+}
+/* ================= event wiring ================= */
+document.querySelectorAll("#segMode .btn").forEach(b =>
+  b.onclick = () => { mode = b.dataset.m; saveAll(); applyMode(); });
+$("togNum").onclick = () => { numbered = !numbered; saveAll(); refreshToggles(); updatePreview(); };
+$("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); updatePreview(); };
+$("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
+$("btnBT").onclick = connectBT;
+$("btnPrint").onclick = doPrint;
+$("btnClear").onclick = doClear;
+$("btnPrev").onclick = () => { if (active > 0){ active--; clearSel(); refreshCalcHead(); updatePreview(); } };
+$("btnNext").onclick = () => { if (active < tapes.length-1){ active++; clearSel(); refreshCalcHead(); updatePreview(); } };
+$("btnHist").onclick = () => {
+  if (!confirm("Hapus SEMUA riwayat pita?")) return;
+  tapes = [[["c"]]]; active = 0; clearSel();
+  refreshCalcHead(); updatePreview(); saveAll(); setStat("Riwayat dihapus.","ok");
+};
+$("btnDelRow").onclick = delRow;
+$("btnCancelEdit").onclick = () => { clearSel(); updatePreview(); setStat("Edit dibatalkan."); };
+$("inAmt").addEventListener("input", liveComma);
+$("preview").addEventListener("click", e => {
+  const span = e.target.closest(".row");
+  if (span && mode === "calc") selectRow(parseInt(span.dataset.i));
+});
+$("pad").addEventListener("click", e => {
+  const b = e.target.closest("[data-k]");
+  if (!b) return;
+  const k = b.dataset.k, el = $("inAmt");
+  if (k === "C") el.value = "";
+  else if (k === "BS") { el.value = el.value.slice(0,-1); liveComma(); }
+  else if (k === "SUB") keySub();
+  else if (k === "TOT") keyTot();
+  else if (k === "CA") keyCA();
+  else if (k === "+") commit("+");
+  else if (k === "-") commit("-");
+  else { el.value += k; liveComma(); }
+});
+/* init */
+refreshToggles(); applyMode();
+</script>
+</body>
+</html>
