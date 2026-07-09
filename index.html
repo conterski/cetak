@@ -500,8 +500,19 @@ function blog(msg){
   el.textContent += msg + "\n";
 }
 function propsOf(c){
-  return ["write","writeWithoutResponse","notify","read","indicate"]
-    .filter(k => c.properties[k]).join(",");
+  const p = c.properties || {};
+  const list = ["write","writeWithoutResponse","notify","read","indicate"]
+    .filter(k => p[k]).join(",");
+  return list || "?";
+}
+/* karakteristik "tulis" yang dikenal pada printer thermal (dicocokkan
+   berdasarkan UUID kalau Bluefy tidak menyediakan .properties) */
+const WRITE_CHARS = ["2af1","ffe1","ff02","ff03","ae01","abf1",
+  "49535343-8841-43f4-a8d4-ecbe34729bb3",
+  "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"];
+function isKnownWrite(uuid){
+  const u = uuid.toLowerCase();
+  return WRITE_CHARS.some(w => u === w || u.startsWith("0000" + w + "-") || u.includes(w));
 }
 async function connectBT(){
   if (!navigator.bluetooth){
@@ -539,7 +550,7 @@ async function connectBT(){
     try { services = await server.getPrimaryServices(); }
     catch(e){ blog("getPrimaryServices: " + e.name + " - " + e.message); }
     blog("Layanan terlihat: " + services.length);
-    let fallback = null;
+    let byProp = null, byName = null, anyChar = null;
     for (const s of services){
       blog("svc " + s.uuid);
       let chars = [];
@@ -547,11 +558,14 @@ async function connectBT(){
       catch(e){ blog("  (karakteristik: " + e.message + ")"); continue; }
       for (const c of chars){
         blog("  chr " + c.uuid + " [" + propsOf(c) + "]");
-        if (c.properties.writeWithoutResponse && !bleChar) bleChar = c;
-        if (c.properties.write && !fallback) fallback = c;
+        const p = c.properties || {};
+        if ((p.writeWithoutResponse || p.write) && !byProp) byProp = c;
+        if (isKnownWrite(c.uuid) && !byName) byName = c;
+        if (!anyChar) anyChar = c;
       }
     }
-    if (!bleChar) bleChar = fallback;
+    // pilih: yang jelas bisa tulis > yang UUID-nya dikenal > apa saja
+    bleChar = byProp || byName || anyChar;
     if (!bleChar){
       blog("Tidak ditemukan jalur tulis.");
       setStat("Layanan printer tidak dikenali - buka LOG BLUETOOTH di bawah "
@@ -582,21 +596,28 @@ function escposPayload(text){
   return new Uint8Array([...head, ...body]);
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function writeOne(part){
+  // .properties tak bisa dipercaya di Bluefy: coba tanpa-respons dulu,
+  // lalu dengan-respons; ingat mana yang berhasil.
+  if (bleWrite._m === "wor" || bleWrite._m == null){
+    try { await bleChar.writeValueWithoutResponse(part); bleWrite._m = "wor"; return; }
+    catch(e){ if (bleWrite._m === "wor") throw e; }
+  }
+  await bleChar.writeValue(part); bleWrite._m = "wr";
+}
 async function bleWrite(bytes){
   let chunk = 100;
   for (let attempt = 0; attempt < 2; attempt++){
     try {
       for (let i = 0; i < bytes.length; i += chunk){
-        const part = bytes.slice(i, i + chunk);
-        if (bleChar.properties.writeWithoutResponse)
-          await bleChar.writeValueWithoutResponse(part);
-        else await bleChar.writeValue(part);
+        await writeOne(bytes.slice(i, i + chunk));
         await sleep(25);
       }
+      blog("Cetak terkirim (" + bytes.length + " byte).");
       return;
     } catch(e){
       blog("tulis gagal (potongan " + chunk + "): " + e.name + " - " + e.message);
-      if (attempt === 0){ chunk = 20; await sleep(300); } // coba potongan kecil
+      if (attempt === 0){ chunk = 20; bleWrite._m = null; await sleep(300); }
       else throw e;
     }
   }
