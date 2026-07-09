@@ -55,6 +55,12 @@
            padding:8px 14px 12px; margin:0; overflow-x:auto; min-height:60px}
   #preview .row{display:inline}
   #preview .row.sel{background:var(--on); color:var(--accent); border-radius:4px}
+  /* mode kalkulator: pita jadi jendela tinggi tetap di atas numpad */
+  #previewCard.calc{border:0; margin:0; background:transparent}
+  #previewCard.calc .cap{display:none}
+  #previewCard.calc #preview{height:150px; overflow-y:auto; margin:6px 14px 2px;
+    padding:8px 12px; background:var(--input); border:1px solid var(--border);
+    border-radius:10px; min-height:0}
   .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
         border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
         padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -97,7 +103,7 @@
     <button class="btn" id="btnHist">Hapus riwayat</button>
   </div>
   <div id="calcTotal">Total: 0 (0 item)</div>
-  <div class="inrow">
+  <div class="inrow" id="calcInRow">
     <input id="inDate" placeholder="Tgl" maxlength="8" inputmode="numeric">
     <input id="inAmt" placeholder="0" inputmode="decimal">
   </div>
@@ -121,7 +127,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="previewCard">
   <div class="cap">PRATINJAU</div>
   <pre id="preview"></pre>
 </div>
@@ -387,6 +393,13 @@ function updatePreview(){
       }
       return escapeHtml(l);
     }).join("\n");
+    // baris terbaru selalu terlihat; saat mengedit, gulir ke baris terpilih
+    if (sel !== null){
+      const selSpan = pv.querySelector(".row.sel");
+      if (selSpan) selSpan.scrollIntoView({block:"nearest"});
+    } else {
+      pv.scrollTop = pv.scrollHeight;
+    }
   } else {
     lineMap = {};
     pv.textContent = currentDraft();
@@ -411,6 +424,16 @@ function applyMode(){
   $("panelCalc").style.display = mode === "calc" ? "" : "none";
   $("capText").textContent = mode === "plain"
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
+  // pindahkan pratinjau: di mode kalkulator, taruh di atas numpad (jendela pita);
+  // di mode lain, kembalikan sebagai kartu biasa
+  const pc = $("previewCard");
+  if (mode === "calc"){
+    pc.classList.add("calc");
+    $("panelCalc").insertBefore(pc, $("calcInRow"));
+  } else {
+    pc.classList.remove("calc");
+    $("btlog").parentNode.insertBefore(pc, $("btlog"));
+  }
   if (mode === "calc") keyCA(true);
   refreshToggles(); refreshCalcHead(); updatePreview();
 }
