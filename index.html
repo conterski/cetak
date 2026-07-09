@@ -58,9 +58,13 @@
   /* mode kalkulator: pita jadi jendela tinggi tetap di atas numpad */
   #previewCard.calc{border:0; margin:0; background:transparent}
   #previewCard.calc .cap{display:none}
-  #previewCard.calc #preview{height:150px; overflow-y:auto; margin:6px 14px 2px;
+  #previewCard.calc #preview{overflow-y:auto; margin:6px 14px 2px;
     padding:8px 12px; background:var(--input); border:1px solid var(--border);
-    border-radius:10px; min-height:0}
+    border-radius:10px; min-height:80px}
+  /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
+  #calcKeys{background:var(--bg)}
+  body.calc #calcKeys{border-top:1px solid var(--border);
+    padding:6px 0 2px; box-shadow:0 -6px 14px rgba(0,0,0,.06)}
   .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
         border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
         padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -88,6 +92,7 @@
 <div class="rowbar">
   <button class="btn tog" id="togNum">Nomor urut</button>
   <button class="btn tog" id="togHead">Tanggal &amp; garis</button>
+  <button class="btn tog" id="togAuto" style="display:none">Auto-cetak</button>
 </div>
 
 <div class="card" id="panelText">
@@ -103,6 +108,7 @@
     <button class="btn" id="btnHist">Hapus riwayat</button>
   </div>
   <div id="calcTotal">Total: 0 (0 item)</div>
+  <div id="calcKeys">
   <div class="inrow" id="calcInRow">
     <input id="inDate" placeholder="Tgl" maxlength="8" inputmode="numeric">
     <input id="inAmt" placeholder="0" inputmode="decimal">
@@ -124,6 +130,7 @@
     <button class="btn" data-k="3">3</button><button class="btn" data-k="00">00</button>
     <button class="btn" data-k="0">0</button><button class="btn" data-k="000">000</button>
     <button class="btn" data-k=".">.</button><button class="btn dan" data-k="CA">CA</button>
+  </div>
   </div>
 </div>
 
@@ -358,6 +365,7 @@ function setStat(msg, cls){ statEl.textContent = msg; statEl.className = cls || 
 let mode = localStorage.cdp_mode || "table";
 let numbered = localStorage.cdp_num !== "0";
 let headers = localStorage.cdp_head !== "0";
+let autoprint = localStorage.cdp_auto === "1";
 let tapes = [[["c"]]], active = 0, sel = null;
 try {
   const t = JSON.parse(localStorage.cdp_tapes || "null");
@@ -394,6 +402,7 @@ function updatePreview(){
       return escapeHtml(l);
     }).join("\n");
     // baris terbaru selalu terlihat; saat mengedit, gulir ke baris terpilih
+    layoutCalc();
     if (sel !== null){
       const selSpan = pv.querySelector(".row.sel");
       if (selSpan) selSpan.scrollIntoView({block:"nearest"});
@@ -405,11 +414,31 @@ function updatePreview(){
     pv.textContent = currentDraft();
   }
 }
+/* atur numpad menempel di bawah & tinggi jendela pita mengisi sisa ruang */
+function layoutCalc(){
+  const keys = $("calcKeys"), pv = $("preview");
+  if (mode !== "calc"){
+    keys.style.position = keys.style.left = keys.style.right =
+      keys.style.bottom = keys.style.zIndex = "";
+    pv.style.height = "";
+    return;
+  }
+  const footH = document.querySelector(".foot").getBoundingClientRect().height;
+  keys.style.position = "fixed";
+  keys.style.left = "0"; keys.style.right = "0";
+  keys.style.bottom = footH + "px";
+  keys.style.zIndex = "10";
+  const top = pv.getBoundingClientRect().top;
+  const keysTop = keys.getBoundingClientRect().top;
+  pv.style.height = Math.max(80, Math.floor(keysTop - top - 8)) + "px";
+}
+window.addEventListener("resize", () => { if (mode === "calc") layoutCalc(); });
 function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 
 function refreshToggles(){
   $("togNum").classList.toggle("act", numbered);
   $("togHead").classList.toggle("act", headers);
+  $("togAuto").classList.toggle("act", autoprint);
   document.querySelectorAll("#segMode .btn").forEach(b =>
     b.classList.toggle("act", b.dataset.m === mode));
 }
@@ -429,13 +458,18 @@ function applyMode(){
   const pc = $("previewCard");
   if (mode === "calc"){
     pc.classList.add("calc");
-    $("panelCalc").insertBefore(pc, $("calcInRow"));
+    $("panelCalc").insertBefore(pc, $("calcKeys"));
   } else {
     pc.classList.remove("calc");
     $("btlog").parentNode.insertBefore(pc, $("btlog"));
   }
+  document.body.classList.toggle("calc", mode === "calc");
+  $("togAuto").style.display = mode === "calc" ? "" : "none";
+  $("btlog").style.display = mode === "calc" ? "none" : "";
   if (mode === "calc") keyCA(true);
   refreshToggles(); refreshCalcHead(); updatePreview();
+  layoutCalc();
+  requestAnimationFrame(layoutCalc);  // penyempurnaan setelah reflow (jika aktif)
 }
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; }
@@ -478,6 +512,7 @@ function keyTot(){
   if (!count) return;
   curTape().push(["t"]);
   refreshCalcHead(); updatePreview(); saveAll();
+  if (autoprint) doPrint(true);  // langsung cetak jika Auto-cetak aktif
 }
 function keyCA(silent){
   clearSel();
@@ -646,7 +681,7 @@ async function bleWrite(bytes){
   }
 }
 /* ================= tombol utama ================= */
-async function doPrint(){
+async function doPrint(skipConfirm){
   const hasContent = mode === "calc"
     ? curTape().some(ev => ev[0]==="e") : $("txt").value.trim() !== "";
   if (!hasContent){ setStat("Tidak ada yang dicetak.","err"); return; }
@@ -657,7 +692,7 @@ async function doPrint(){
   } else {
     summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
   }
-  if (!confirm(`Cetak ke printer?\n${summary}`)) { setStat("Dibatalkan."); return; }
+  if (!skipConfirm && !confirm(`Cetak ke printer?\n${summary}`)) { setStat("Dibatalkan."); return; }
   if (!bleChar || !bleDevice?.gatt?.connected){
     if (!await connectBT()) return;
   }
@@ -684,9 +719,11 @@ document.querySelectorAll("#segMode .btn").forEach(b =>
   b.onclick = () => { mode = b.dataset.m; saveAll(); applyMode(); });
 $("togNum").onclick = () => { numbered = !numbered; saveAll(); refreshToggles(); updatePreview(); };
 $("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); updatePreview(); };
+$("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
+  setStat(autoprint ? "Auto-cetak aktif: TOTAL langsung mencetak." : "Auto-cetak mati."); };
 $("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
 $("btnBT").onclick = connectBT;
-$("btnPrint").onclick = doPrint;
+$("btnPrint").onclick = () => doPrint(false);
 $("btnClear").onclick = doClear;
 $("btnPrev").onclick = () => { if (active > 0){ active--; clearSel(); refreshCalcHead(); updatePreview(); } };
 $("btnNext").onclick = () => { if (active < tapes.length-1){ active++; clearSel(); refreshCalcHead(); updatePreview(); } };
@@ -705,6 +742,7 @@ $("preview").addEventListener("click", e => {
 $("pad").addEventListener("click", e => {
   const b = e.target.closest("[data-k]");
   if (!b) return;
+  if (navigator.vibrate) navigator.vibrate(8);  // getar halus tiap tekan
   const k = b.dataset.k, el = $("inAmt");
   if (k === "C") el.value = "";
   else if (k === "BS") { el.value = el.value.slice(0,-1); liveComma(); }
