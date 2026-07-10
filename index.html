@@ -681,9 +681,8 @@ function padDateDigit(d){
 function backspaceDate(){
   const el = $("inDate");
   const raw = el.dataset.raw || "";
-  if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; }
-  else if (sel !== null) delRow();
-  else deleteLastRow();
+  if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; return; }
+  deleteRowNow();   // Tanggal = kolom paling kiri -> kosong + ⌫ = hapus baris
 }
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; setDate(""); }
@@ -788,11 +787,22 @@ function deleteLastRow(){
 }
 /* tombol ⌫ / Backspace: ada isi -> hapus 1 angka; kolom kosong -> hapus baris.
    saat sedang mengedit baris & kolom dikosongkan -> hapus baris itu. */
+/* hapus baris pita: yang sedang diedit, atau baris terakhir */
+function deleteRowNow(){ if (sel !== null) delRow(); else deleteLastRow(); }
+/* ⌫ di Nominal: ada isi -> hapus 1 angka; kosong -> mundur ke kolom kiri (Tanggal).
+   Hanya kolom PALING KIRI yang kosong yang menghapus baris sebelumnya. */
 function backspace(){
   const el = $("inAmt");
-  if (el.value){ el.value = el.value.slice(0,-1); liveComma(); }
-  else if (sel !== null) delRow();
-  else deleteLastRow();
+  if (el.value){ el.value = el.value.slice(0,-1); liveComma(); focusAmt(); return; }
+  if (usedate){ focusDate(); return; }   // Tanggal aktif -> Nominal bukan kolom terkiri
+  deleteRowNow(); focusAmt();
+}
+/* Delete di Nominal: ada isi -> hapus 1 angka; kosong -> langsung hapus baris */
+function deleteFromAmt(){
+  const el = $("inAmt");
+  if (el.value){ el.value = el.value.slice(0,-1); liveComma(); focusAmt(); return; }
+  deleteRowNow();
+  if (usedate) focusDate(); else focusAmt();
 }
 /* ================= Bluetooth LE (ESC/POS) ================= */
 /* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
@@ -1059,7 +1069,8 @@ document.addEventListener("keydown", e => {
   else if (k === "."){ if (!el.value.includes(".")) el.value += "."; el.focus(); e.preventDefault(); }
   else if (k === "Enter" || k === "+"){ commit("+"); e.preventDefault(); }  // commit atur fokus
   else if (k === "-"){ commit("-"); e.preventDefault(); }
-  else if (k === "Backspace" || k === "Delete"){ backspace(); el.focus(); e.preventDefault(); }
+  else if (k === "Backspace"){ backspace(); e.preventDefault(); }      // mundur ke kiri
+  else if (k === "Delete"){ deleteFromAmt(); e.preventDefault(); }     // langsung hapus baris
   else if (k === "Escape"){
     if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
     else { el.value = ""; setDate(""); }
