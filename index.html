@@ -623,6 +623,13 @@ function fmtDate(raw){
   const m = mRaw.length === 2 ? String(parseInt(mRaw, 10)) : mRaw;
   return d + "/" + m;
 }
+/* tanggal sah = 4 angka DDMM, hari 1..31, bulan 1..12 */
+function dateValid(raw){
+  raw = String(raw || "");
+  if (!/^\d{4}$/.test(raw)) return false;
+  const d = parseInt(raw.slice(0,2), 10), m = parseInt(raw.slice(2), 10);
+  return d >= 1 && d <= 31 && m >= 1 && m <= 12;
+}
 /* "9/7" -> "0907" (untuk memuat ulang saat mengedit baris) */
 function dateToRaw(disp){
   disp = String(disp || "").trim();
@@ -659,15 +666,24 @@ function focusAmt(){ activeField = "amt"; $("inAmt").focus(); }
 function padDateDigit(d){
   const el = $("inDate");
   let raw = el.dataset.raw || "";
-  if (raw.length >= 4) return;
+  if (raw.length >= 4) return;             // sudah penuh: pakai ⌫ untuk mengubah
   raw += d;
   el.dataset.raw = raw; el.value = raw;
-  if (raw.length === 4){ setDate(raw); focusAmt(); }
+  if (raw.length < 4) return;
+  if (dateValid(raw)){ setDate(raw); focusAmt(); }   // lengkap & sah -> ke Nominal
+  else {                                             // tolak langsung, biar bisa diketik ulang
+    el.dataset.raw = ""; el.value = "";
+    setStat("Tanggal tidak sah: hari 01–31, bulan 01–12.","err");
+  }
 }
-function padDateBack(){
+/* ⌫ di kolom Tanggal: ada angka -> hapus 1 angka; kosong -> hapus baris
+   (baris yang sedang diedit, atau baris terakhir termasuk TOTAL/SUB) */
+function backspaceDate(){
   const el = $("inDate");
-  const raw = (el.dataset.raw || "").slice(0, -1);
-  el.dataset.raw = raw; el.value = raw;
+  const raw = el.dataset.raw || "";
+  if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; }
+  else if (sel !== null) delRow();
+  else deleteLastRow();
 }
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; setDate(""); }
@@ -698,8 +714,18 @@ function liveComma(){
 function commit(op){
   const v = parseAmount($("inAmt").value);
   if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
-  // pastikan tanggal tersimpan sebagai "d/m" walau kolomnya belum ditinggalkan
-  if (usedate) setDate($("inDate").dataset.raw);
+  // Tanggal aktif -> wajib diisi lengkap (DDMM) sebelum baris bisa disimpan
+  if (usedate){
+    const raw = $("inDate").dataset.raw || "";
+    if (!dateValid(raw)){
+      // sudah 4 angka tapi tidak sah -> kosongkan supaya bisa langsung diketik ulang
+      if (raw.length >= 4) setDate("");
+      setStat("Tanggal wajib diisi: 4 angka DDMM, mis. 0907 = 9/7.","err");
+      focusDate();
+      return;
+    }
+    setDate(raw);   // pastikan tersimpan sebagai "d/m"
+  }
   const ev = ["e", v, op, usedate ? $("inDate").value.trim() : ""];
   if (sel !== null){ curTape()[sel] = ev; clearSel(); setStat("Baris diperbarui.","ok"); }
   else { curTape().push(ev); setStat("Siap."); }
@@ -708,13 +734,16 @@ function commit(op){
   if (usedate) focusDate(); else focusAmt();
   refreshCalcHead(); updatePreview(); saveAll();
 }
-function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); }
+/* setelah aksi pita, arahkan kursor ke kolom pertama baris berikutnya */
+function focusEntry(){ if (usedate) focusDate(); else focusAmt(); }
+function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); focusEntry(); }
 function keyTot(){
   clearSel();
   const [, , count] = resolveTape(curTape());
   if (!count) return;
   curTape().push(["t"]);
   refreshCalcHead(); updatePreview(); saveAll();
+  focusEntry();
   if (autoprint) doPrint(true);  // langsung cetak jika Auto-cetak aktif
 }
 /* CA = bersihkan semua baris pita ini, sisakan "0 C" saja */
@@ -724,7 +753,7 @@ function keyCA(silent){
   t.length = 0;
   t.push(["c"]);
   refreshCalcHead(); updatePreview(); saveAll();
-  if (!silent) setStat("Semua baris dihapus.");
+  if (!silent){ setStat("Semua baris dihapus."); focusEntry(); }
 }
 /* Baru = buat pita baru (pita lama tersimpan sebagai riwayat, maks 6) */
 function keyNew(silent){
@@ -736,7 +765,9 @@ function keyNew(silent){
   }
   active = tapes.length - 1;
   refreshCalcHead(); updatePreview(); saveAll();
-  if (!silent) setStat("Pita baru.");
+  // saat dipanggil dari applyMode (silent) jangan fokuskan apa pun:
+  // di HP itu bisa memunculkan papan ketik sebelum readOnly dipasang
+  if (!silent){ setStat("Pita baru."); focusEntry(); }
 }
 function delRow(){
   if (sel === null) return;
@@ -998,7 +1029,7 @@ $("pad").addEventListener("click", e => {
   const k = b.dataset.k, el = $("inAmt");
   const onDate = usedate && activeField === "date";
   if (k === "C") { if (onDate) setDate(""); else el.value = ""; }
-  else if (k === "BS") { if (onDate) padDateBack(); else backspace(); }
+  else if (k === "BS") { if (onDate) backspaceDate(); else backspace(); }
   else if (k === "SUB") keySub();
   else if (k === "TOT") keyTot();
   else if (k === "CA") keyCA();
@@ -1047,11 +1078,18 @@ $("inDate").addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const el = $("inDate"), k = e.key;
   if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
-    setDate(el.dataset.raw); $("inAmt").focus(); e.preventDefault();
+    setDate(el.dataset.raw); focusAmt(); e.preventDefault();
   } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
     if (el.selectionStart >= el.value.length){
-      setDate(el.dataset.raw); $("inAmt").focus(); moveCaretStart($("inAmt")); e.preventDefault();
+      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
     }
+  } else if (k === "Backspace" || k === "Delete"){
+    // kolom kosong -> hapus baris pita (mis. baris TOTAL), sama seperti di Nominal
+    backspaceDate(); e.preventDefault();
+  } else if (k === "Escape"){
+    if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
+    else { $("inAmt").value = ""; setDate(""); }
+    e.preventDefault();
   }
   // ArrowLeft di ujung kiri: kolom paling kiri, biarkan caret bergerak normal
 });
