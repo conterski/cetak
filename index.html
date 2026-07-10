@@ -62,13 +62,25 @@
   /* mode kalkulator: pita jadi jendela tinggi tetap di atas numpad */
   #previewCard.calc{border:0; margin:0; background:transparent}
   #previewCard.calc .cap{display:none}
+  /* tinggi diatur JS (layoutCalc); min-height:0 supaya tak menabrak numpad */
   #previewCard.calc #preview{overflow-y:auto; margin:6px 14px 2px;
     padding:8px 12px; background:var(--input); border:1px solid var(--border);
-    border-radius:10px; min-height:80px}
+    border-radius:10px; min-height:0}
   /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
   #calcKeys{background:var(--bg)}
   body.calc #calcKeys{border-top:1px solid var(--border);
-    padding:6px 0 2px; box-shadow:0 -6px 14px rgba(0,0,0,.06)}
+    padding:0 0 2px; box-shadow:0 -6px 14px rgba(0,0,0,.06);
+    display:flex; flex-direction:column}
+  /* numpad menyusut mengikuti tinggi yang diseret pengguna */
+  body.calc #pad{flex:1 1 auto; min-height:0; grid-auto-rows:1fr; padding:6px 14px 8px}
+  body.calc #pad .btn{padding:0; min-height:0}
+  /* pegangan seret (hanya mode kalkulator di layar sempit) */
+  #keysGrip{display:none}
+  body.calc #keysGrip{display:block; position:relative; height:20px; flex:0 0 20px;
+    touch-action:none; cursor:ns-resize}
+  body.calc #keysGrip::before{content:""; position:absolute; left:50%; top:7px;
+    transform:translateX(-50%); width:44px; height:5px; border-radius:3px; background:#c3c8d0}
+  body.calc #keysGrip:active::before{background:var(--accent)}
   .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
         border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
         padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -142,6 +154,7 @@
   </div>
   <div id="calcTotal">Total: 0 (0 item)</div>
   <div id="calcKeys">
+  <div id="keysGrip" title="Geser untuk mengatur tinggi numpad (ketuk dua kali: otomatis)"></div>
   <div class="inrow" id="calcInRow">
     <input id="inDate" placeholder="h/b" maxlength="5" inputmode="numeric">
     <input id="inAmt" placeholder="0" inputmode="decimal">
@@ -468,12 +481,16 @@ function layoutDesktop(){
   const top = stage.getBoundingClientRect().top;
   stage.style.height = Math.max(340, Math.floor(window.innerHeight - top - footH - 12)) + "px";
 }
-/* HP: numpad menempel di bawah & tinggi jendela pita mengisi sisa ruang */
+/* HP: numpad menempel di bawah, tingginya bisa diseret; sisanya untuk pita.
+   keysH = 0 berarti otomatis (proporsional terhadap tinggi layar). */
+const MIN_KEYS = 170, MIN_PREVIEW = 120, FLOOR_PREVIEW = 60, GAP = 8, KEYS_RATIO = 0.55;
+let keysH = parseInt(localStorage.cdp_keysh || "0", 10) || 0;
+
 function layoutCalc(){
   const keys = $("calcKeys"), pv = $("preview");
   if (!(mode === "calc" && !isDesktop())){
     keys.style.position = keys.style.left = keys.style.right =
-      keys.style.bottom = keys.style.zIndex = "";
+      keys.style.bottom = keys.style.zIndex = keys.style.height = "";
     pv.style.height = "";
     return;
   }
@@ -482,9 +499,55 @@ function layoutCalc(){
   keys.style.left = "0"; keys.style.right = "0";
   keys.style.bottom = footH + "px";
   keys.style.zIndex = "10";
+
+  // ruang yang tersedia dari atas pita sampai bilah CETAK
+  keys.style.height = "";                       // ukur tinggi alami numpad dulu
+  const natural = keys.offsetHeight;
   const top = pv.getBoundingClientRect().top;
-  const keysTop = keys.getBoundingClientRect().top;
-  pv.style.height = Math.max(80, Math.floor(keysTop - top - 8)) + "px";
+  const avail = window.innerHeight - footH - top - GAP;
+
+  // batas: numpad cukup besar untuk dipakai, pita selalu kebagian sisa ruang
+  const minKeys = Math.min(MIN_KEYS, Math.max(110, avail - FLOOR_PREVIEW));
+  const maxKeys = Math.max(minKeys, avail - FLOOR_PREVIEW);
+  // otomatis: tak lebih dari KEYS_RATIO ruang, tak lebih tinggi dari alaminya,
+  // dan sebisanya sisakan MIN_PREVIEW untuk pita
+  const auto = Math.min(natural, Math.round(avail * KEYS_RATIO), Math.max(minKeys, avail - MIN_PREVIEW));
+  let h = Math.max(minKeys, Math.min(keysH || auto, maxKeys));
+
+  keys.style.height = h + "px";
+  pv.style.height = Math.max(FLOOR_PREVIEW, Math.floor(avail - h)) + "px";
+  return h;
+}
+/* pegangan seret: tarik ke atas = numpad lebih tinggi, ke bawah = pita lebih lega */
+function initGrip(){
+  const grip = $("keysGrip");
+  let startY = 0, startH = 0, dragging = false;
+  grip.addEventListener("pointerdown", e => {
+    if (!(mode === "calc" && !isDesktop())) return;
+    dragging = true; startY = e.clientY; startH = $("calcKeys").offsetHeight;
+    try { grip.setPointerCapture(e.pointerId); } catch(_e){}
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    keysH = startH + (startY - e.clientY);   // seret ke atas -> makin tinggi
+    layoutCalc();
+    e.preventDefault();
+  });
+  const end = e => {
+    if (!dragging) return;
+    dragging = false;
+    try { grip.releasePointerCapture(e.pointerId); } catch(_e){}
+    keysH = $("calcKeys").offsetHeight;      // simpan nilai yang sudah dibatasi
+    localStorage.cdp_keysh = String(keysH);
+  };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  // ketuk dua kali -> kembali ke tinggi otomatis
+  grip.addEventListener("dblclick", () => {
+    keysH = 0; delete localStorage.cdp_keysh; layoutCalc();
+    setStat("Tinggi numpad otomatis.");
+  });
 }
 /* letak kartu pratinjau: HP+kalkulator -> di atas numpad; selain itu -> kolom kanan */
 function placePreview(){
@@ -497,8 +560,18 @@ function placePreview(){
     $("stage").appendChild(pc);
   }
 }
+/* HP: kolom isian dibuat read-only supaya papan ketik bawaan TIDAK muncul —
+   semua angka masuk lewat numpad bawaan. Desktop: tetap bisa diketik. */
+function applyNativeKeyboard(){
+  const ro = !isDesktop();
+  const amt = $("inAmt"), dte = $("inDate");
+  amt.readOnly = ro; dte.readOnly = ro;
+  amt.inputMode = ro ? "none" : "decimal";
+  dte.inputMode = ro ? "none" : "numeric";
+}
 function relayout(){
   document.body.classList.toggle("calc", mode === "calc" && !isDesktop());
+  applyNativeKeyboard();
   placePreview();
   layoutDesktop();
   updatePreview();
@@ -506,7 +579,11 @@ function relayout(){
   requestAnimationFrame(() => { layoutDesktop(); layoutCalc(); });
 }
 mqDesktop.addEventListener("change", relayout);
-window.addEventListener("resize", () => { layoutDesktop(); if (mode === "calc") layoutCalc(); });
+const onViewportChange = () => { layoutDesktop(); if (mode === "calc") layoutCalc(); };
+window.addEventListener("resize", onViewportChange);
+window.addEventListener("orientationchange", onViewportChange);
+// bilah URL HP muncul/hilang -> tinggi layar berubah tanpa event "resize"
+if (window.visualViewport) window.visualViewport.addEventListener("resize", onViewportChange);
 function escapeHtml(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 
 function refreshToggles(){
@@ -568,9 +645,30 @@ function applyUsedate(){
 }
 function moveCaretEnd(el){ const n = el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} }
 function moveCaretStart(el){ try{ el.setSelectionRange(0,0); }catch(e){} }
+/* kolom mana yang sedang menerima angka dari numpad ("amt" | "date") */
+let activeField = "amt";
 /* pindah fokus ke kolom Tanggal & tampilkan angka mentah untuk diedit
    (eksplisit, tak bergantung pada event focus) */
-function focusDate(){ const d = $("inDate"); d.value = d.dataset.raw || ""; d.focus(); moveCaretEnd(d); }
+function focusDate(){
+  const d = $("inDate");
+  activeField = "date";
+  d.value = d.dataset.raw || ""; d.focus(); moveCaretEnd(d);
+}
+function focusAmt(){ activeField = "amt"; $("inAmt").focus(); }
+/* numpad -> kolom Tanggal: angka mentah, penuh 4 digit langsung lompat ke Nominal */
+function padDateDigit(d){
+  const el = $("inDate");
+  let raw = el.dataset.raw || "";
+  if (raw.length >= 4) return;
+  raw += d;
+  el.dataset.raw = raw; el.value = raw;
+  if (raw.length === 4){ setDate(raw); focusAmt(); }
+}
+function padDateBack(){
+  const el = $("inDate");
+  const raw = (el.dataset.raw || "").slice(0, -1);
+  el.dataset.raw = raw; el.value = raw;
+}
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; setDate(""); }
 function selectRow(i){
@@ -600,12 +698,14 @@ function liveComma(){
 function commit(op){
   const v = parseAmount($("inAmt").value);
   if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
+  // pastikan tanggal tersimpan sebagai "d/m" walau kolomnya belum ditinggalkan
+  if (usedate) setDate($("inDate").dataset.raw);
   const ev = ["e", v, op, usedate ? $("inDate").value.trim() : ""];
   if (sel !== null){ curTape()[sel] = ev; clearSel(); setStat("Baris diperbarui.","ok"); }
   else { curTape().push(ev); setStat("Siap."); }
   // reset baris berikutnya: kosongkan Nominal & Tanggal; tanggal di-reset tiap baris
   $("inAmt").value = ""; setDate("");
-  (usedate ? $("inDate") : $("inAmt")).focus();
+  if (usedate) focusDate(); else focusAmt();
   refreshCalcHead(); updatePreview(); saveAll();
 }
 function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); }
@@ -889,18 +989,23 @@ $("preview").addEventListener("click", e => {
   const span = e.target.closest(".row");
   if (span && mode === "calc") selectRow(parseInt(span.dataset.i));
 });
+// jangan curi fokus dari kolom isian saat menekan tombol numpad
+$("pad").addEventListener("mousedown", e => e.preventDefault());
 $("pad").addEventListener("click", e => {
   const b = e.target.closest("[data-k]");
   if (!b) return;
   if (navigator.vibrate) navigator.vibrate(8);  // getar halus tiap tekan
   const k = b.dataset.k, el = $("inAmt");
-  if (k === "C") el.value = "";
-  else if (k === "BS") backspace();
+  const onDate = usedate && activeField === "date";
+  if (k === "C") { if (onDate) setDate(""); else el.value = ""; }
+  else if (k === "BS") { if (onDate) padDateBack(); else backspace(); }
   else if (k === "SUB") keySub();
   else if (k === "TOT") keyTot();
   else if (k === "CA") keyCA();
   else if (k === "+") commit("+");
   else if (k === "-") commit("-");
+  else if (k === ".") { if (!onDate && !el.value.includes(".")) el.value += "."; }
+  else if (onDate) { for (const d of k) padDateDigit(d); }   // "00"/"000" -> per angka
   else { el.value += k; liveComma(); }
 });
 /* ---- keyboard fisik (laptop): ketik angka -> kolom Nominal, Enter = + ---- */
@@ -932,7 +1037,8 @@ document.addEventListener("keydown", e => {
 });
 /* ---- kolom Tanggal: saat difokus tampil angka mentah (DDMM), saat ditinggalkan
    tampil "d/m"; Enter / panah-kanan-di-ujung lompat ke Nominal ---- */
-$("inDate").addEventListener("focus", () => { const el=$("inDate"); el.value = el.dataset.raw || ""; moveCaretEnd(el); });
+$("inAmt").addEventListener("focus", () => { activeField = "amt"; });
+$("inDate").addEventListener("focus", () => { activeField = "date"; const el=$("inDate"); el.value = el.dataset.raw || ""; moveCaretEnd(el); });
 $("inDate").addEventListener("blur", () => setDate($("inDate").dataset.raw));
 $("inDate").addEventListener("input", () => {
   const el=$("inDate"); el.dataset.raw = el.value.replace(/\D/g,"").slice(0,4); el.value = el.dataset.raw;
@@ -958,7 +1064,7 @@ $("togDate").onclick = () => {
   }
 };
 /* init */
-applyUsedate(); refreshToggles(); applyMode();
+initGrip(); applyUsedate(); refreshToggles(); applyMode();
 </script>
 </body>
 </html>
