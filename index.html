@@ -658,6 +658,10 @@ async function connectBT(){
       });
     }
     let server = null, lastErr = null;
+    if (bleDevice.gatt.connected){            // sudah tersambung -> pakai ulang
+      server = bleDevice.gatt;
+      blog("GATT sudah tersambung, dipakai ulang.");
+    }
     for (let i = 1; i <= 3 && !server; i++){
       try {
         blog("Menghubungkan GATT (percobaan " + i + ")...");
@@ -665,6 +669,13 @@ async function connectBT(){
       } catch(e){
         lastErr = e;
         blog("  gagal: " + e.name + " - " + e.message);
+        // Bluefy kadang melempar "already registered/connected" padahal
+        // sambungan sudah aktif -> pakai saja sambungan yang ada.
+        if (/already|registered|connected/i.test((e.name || "") + " " + (e.message || ""))){
+          blog("  (dianggap sudah tersambung)");
+          server = bleDevice.gatt;
+          break;
+        }
         await sleep(900);
       }
     }
@@ -759,7 +770,9 @@ async function doPrint(skipConfirm){
     summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
   }
   if (!skipConfirm && !confirm(`Cetak ke printer?\n${summary}`)) { setStat("Dibatalkan."); return; }
-  if (!bleChar || !bleDevice?.gatt?.connected){
+  // bleChar dikosongkan oleh listener "gattserverdisconnected" saat benar-benar
+  // terputus; jangan andalkan gatt.connected (tidak akurat di Bluefy).
+  if (!bleChar){
     if (!await connectBT()) return;
   }
   const btn = $("btnPrint");
