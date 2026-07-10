@@ -74,7 +74,9 @@
   #stat{flex:1; font-size:12px; color:var(--muted); text-align:right}
   #stat.ok{color:var(--ok)} #stat.err{color:var(--err)}
   /* ====== layar sempit (HP): kartu menumpuk (default) ====== */
-  .calcCap{display:none}
+  /* caption kalkulator: judul + tombol toggle Tanggal (tampil di semua ukuran) */
+  .calcCap{display:flex; align-items:center; gap:10px}
+  #togDate{padding:5px 10px; font-size:11px}
   /* ====== layar lebar (desktop): kalkulator kiri, pratinjau kanan ====== */
   @media (min-width:768px){
     body{padding-bottom:0}
@@ -88,7 +90,6 @@
     #previewCard{flex:1 1 0; display:flex; flex-direction:column; min-height:0}
     #previewCard .cap{flex:0 0 auto}
     #previewCard #preview{flex:1 1 0; min-height:0; overflow:auto}
-    .calcCap{display:block}
     #btlog{display:none}
     /* di desktop numpad TIDAK menempel ke bawah layar */
     body.calc #calcKeys{border:0; box-shadow:none}
@@ -123,7 +124,10 @@
 </div>
 
 <div class="card" id="panelCalc" style="display:none">
-  <div class="cap calcCap">KALKULATOR PITA</div>
+  <div class="cap calcCap">
+    <span>KALKULATOR PITA</span>
+    <button class="btn tog" id="togDate">Tanggal</button>
+  </div>
   <div id="calcNav">
     <button class="btn" id="btnPrev">&#9664;</button>
     <span id="tapeLbl">Pita 1/1</span>
@@ -133,7 +137,7 @@
   <div id="calcTotal">Total: 0 (0 item)</div>
   <div id="calcKeys">
   <div class="inrow" id="calcInRow">
-    <input id="inDate" placeholder="Tgl" maxlength="8" inputmode="numeric">
+    <input id="inDate" placeholder="h/b" maxlength="5" inputmode="numeric">
     <input id="inAmt" placeholder="0" inputmode="decimal">
   </div>
   <div id="editBar"><span id="editLbl"></span>
@@ -391,6 +395,7 @@ let mode = localStorage.cdp_mode || "table";
 let numbered = localStorage.cdp_num !== "0";
 let headers = localStorage.cdp_head !== "0";
 let autoprint = localStorage.cdp_auto === "1";
+let usedate = localStorage.cdp_usedate === "1";   // kolom tanggal per-baris (default mati)
 let tapes = [[["c"]]], active = 0, sel = null;
 try {
   const t = JSON.parse(localStorage.cdp_tapes || "null");
@@ -403,6 +408,7 @@ const curTape = () => tapes[active];
 function saveAll(){
   localStorage.cdp_mode = mode; localStorage.cdp_num = numbered ? "1" : "0";
   localStorage.cdp_head = headers ? "1" : "0";
+  localStorage.cdp_usedate = usedate ? "1" : "0";
   localStorage.cdp_text = $("txt").value;
   localStorage.cdp_tapes = JSON.stringify(tapes);
 }
@@ -516,15 +522,51 @@ function applyMode(){
   if (mode === "calc") keyCA(true);
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
-  if (mode === "calc" && isDesktop()) $("inAmt").focus();  // siap diketik dari keyboard
+  // siap diketik: fokus ke kolom Tanggal jika aktif, selain itu ke Nominal
+  if (mode === "calc" && isDesktop()) (usedate ? $("inDate") : $("inAmt")).focus();
 }
+/* ================= kolom tanggal (d/m) ================= */
+/* input 4 angka DDMM -> tampil "d/m" (buang nol depan). mis. 0907 -> 9/7 */
+function fmtDate(raw){
+  raw = String(raw || "").replace(/\D/g,"").slice(0,4);
+  if (raw.length <= 2) return raw;                 // masih mengetik hari
+  const d = String(parseInt(raw.slice(0,2), 10));
+  const mRaw = raw.slice(2);
+  const m = mRaw.length === 2 ? String(parseInt(mRaw, 10)) : mRaw;
+  return d + "/" + m;
+}
+/* "9/7" -> "0907" (untuk memuat ulang saat mengedit baris) */
+function dateToRaw(disp){
+  disp = String(disp || "").trim();
+  if (!disp) return "";
+  const p = disp.split("/");
+  const d = (p[0] || "").replace(/\D/g,"");
+  const m = (p[1] || "").replace(/\D/g,"");
+  if (p.length < 2) return d.slice(0,4);
+  return (d.padStart(2,"0").slice(0,2)) + (m.padStart(2,"0").slice(0,2));
+}
+function setDate(raw){
+  const el = $("inDate");
+  raw = String(raw || "").replace(/\D/g,"").slice(0,4);
+  el.dataset.raw = raw;
+  el.value = fmtDate(raw);
+}
+function applyUsedate(){
+  $("inDate").style.display = usedate ? "" : "none";
+  $("togDate").classList.toggle("act", usedate);
+}
+function moveCaretEnd(el){ const n = el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} }
+function moveCaretStart(el){ try{ el.setSelectionRange(0,0); }catch(e){} }
+/* pindah fokus ke kolom Tanggal & tampilkan angka mentah untuk diedit
+   (eksplisit, tak bergantung pada event focus) */
+function focusDate(){ const d = $("inDate"); d.value = d.dataset.raw || ""; d.focus(); moveCaretEnd(d); }
 /* ================= kalkulator: aksi ================= */
-function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; }
+function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; setDate(""); }
 function selectRow(i){
   sel = i;
   const ev = curTape()[i];
   $("inAmt").value = fmtAmount(ev[1]);
-  $("inDate").value = ev[3] || "";
+  setDate(dateToRaw(ev[3] || ""));
   let no = 0;
   for (let j = 0; j <= i; j++){
     const e2 = curTape()[j];
@@ -547,9 +589,12 @@ function liveComma(){
 function commit(op){
   const v = parseAmount($("inAmt").value);
   if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
-  const ev = ["e", v, op, $("inDate").value.trim()];
+  const ev = ["e", v, op, usedate ? $("inDate").value.trim() : ""];
   if (sel !== null){ curTape()[sel] = ev; clearSel(); setStat("Baris diperbarui.","ok"); }
-  else { curTape().push(ev); $("inAmt").value = ""; setStat("Siap."); }
+  else { curTape().push(ev); setStat("Siap."); }
+  // reset baris berikutnya: kosongkan Nominal & Tanggal; tanggal di-reset tiap baris
+  $("inAmt").value = ""; setDate("");
+  (usedate ? $("inDate") : $("inAmt")).focus();
   refreshCalcHead(); updatePreview(); saveAll();
 }
 function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); }
@@ -837,22 +882,57 @@ document.addEventListener("keydown", e => {
   if (mode !== "calc") return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const el = $("inAmt"), ae = document.activeElement;
-  // biarkan kolom Tgl (atau input lain) menerima ketikannya sendiri
+  // biarkan kolom Tgl (atau input lain) menangani ketikannya sendiri
   if (ae && ae !== el && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
   const k = e.key;
+  // Shift+Enter: lompat dari Nominal kembali ke Tanggal
+  if (k === "Enter" && e.shiftKey){ if (usedate) focusDate(); e.preventDefault(); return; }
+  // panah kiri di ujung kiri Nominal -> pindah ke Tanggal ("di ujung")
+  if (k === "ArrowLeft"){
+    if (usedate && el.selectionStart === 0 && el.selectionEnd === 0){ focusDate(); e.preventDefault(); }
+    return;   // selain di ujung: biarkan caret bergerak normal
+  }
+  if (k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") return;  // caret normal
   if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); el.focus(); e.preventDefault(); }
   else if (k === "."){ if (!el.value.includes(".")) el.value += "."; el.focus(); e.preventDefault(); }
-  else if (k === "Enter" || k === "+"){ commit("+"); el.focus(); e.preventDefault(); }
-  else if (k === "-"){ commit("-"); el.focus(); e.preventDefault(); }
+  else if (k === "Enter" || k === "+"){ commit("+"); e.preventDefault(); }  // commit atur fokus
+  else if (k === "-"){ commit("-"); e.preventDefault(); }
   else if (k === "Backspace" || k === "Delete"){ backspace(); el.focus(); e.preventDefault(); }
   else if (k === "Escape"){
     if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
-    else el.value = "";
+    else { el.value = ""; setDate(""); }
     e.preventDefault();
   }
 });
+/* ---- kolom Tanggal: saat difokus tampil angka mentah (DDMM), saat ditinggalkan
+   tampil "d/m"; Enter / panah-kanan-di-ujung lompat ke Nominal ---- */
+$("inDate").addEventListener("focus", () => { const el=$("inDate"); el.value = el.dataset.raw || ""; moveCaretEnd(el); });
+$("inDate").addEventListener("blur", () => setDate($("inDate").dataset.raw));
+$("inDate").addEventListener("input", () => {
+  const el=$("inDate"); el.dataset.raw = el.value.replace(/\D/g,"").slice(0,4); el.value = el.dataset.raw;
+});
+$("inDate").addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = $("inDate"), k = e.key;
+  if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
+    setDate(el.dataset.raw); $("inAmt").focus(); e.preventDefault();
+  } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
+    if (el.selectionStart >= el.value.length){
+      setDate(el.dataset.raw); $("inAmt").focus(); moveCaretStart($("inAmt")); e.preventDefault();
+    }
+  }
+  // ArrowLeft di ujung kiri: kolom paling kiri, biarkan caret bergerak normal
+});
+$("togDate").onclick = () => {
+  usedate = !usedate; saveAll(); applyUsedate();
+  if (mode === "calc"){
+    if (usedate){ setDate(""); focusDate(); } else $("inAmt").focus();
+    setStat(usedate ? "Kolom tanggal aktif (d/m). Enter: ke Nominal, Shift+Enter: kembali."
+                    : "Kolom tanggal mati.");
+  }
+};
 /* init */
-refreshToggles(); applyMode();
+applyUsedate(); refreshToggles(); applyMode();
 </script>
 </body>
 </html>
