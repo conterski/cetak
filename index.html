@@ -516,6 +516,7 @@ function applyMode(){
   if (mode === "calc") keyCA(true);
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
+  if (mode === "calc" && isDesktop()) $("inAmt").focus();  // siap diketik dari keyboard
 }
 /* ================= kalkulator: aksi ================= */
 function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; }
@@ -576,6 +577,25 @@ function delRow(){
   curTape().splice(sel, 1);
   clearSel(); refreshCalcHead(); updatePreview(); saveAll();
   setStat("Baris dihapus.","ok");
+}
+/* hapus kejadian terakhir di pita (kecuali penanda awal "c") */
+function deleteLastRow(){
+  const t = curTape(), last = t.length - 1;
+  if (last >= 0 && t[last][0] !== "c"){
+    t.splice(last, 1);
+    clearSel(); refreshCalcHead(); updatePreview(); saveAll();
+    setStat("Baris terakhir dihapus.","ok");
+    return true;
+  }
+  return false;
+}
+/* tombol ⌫ / Backspace: ada isi -> hapus 1 angka; kolom kosong -> hapus baris.
+   saat sedang mengedit baris & kolom dikosongkan -> hapus baris itu. */
+function backspace(){
+  const el = $("inAmt");
+  if (el.value){ el.value = el.value.slice(0,-1); liveComma(); }
+  else if (sel !== null) delRow();
+  else deleteLastRow();
 }
 /* ================= Bluetooth LE (ESC/POS) ================= */
 /* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
@@ -791,13 +811,32 @@ $("pad").addEventListener("click", e => {
   if (navigator.vibrate) navigator.vibrate(8);  // getar halus tiap tekan
   const k = b.dataset.k, el = $("inAmt");
   if (k === "C") el.value = "";
-  else if (k === "BS") { el.value = el.value.slice(0,-1); liveComma(); }
+  else if (k === "BS") backspace();
   else if (k === "SUB") keySub();
   else if (k === "TOT") keyTot();
   else if (k === "CA") keyCA();
   else if (k === "+") commit("+");
   else if (k === "-") commit("-");
   else { el.value += k; liveComma(); }
+});
+/* ---- keyboard fisik (laptop): ketik angka -> kolom Nominal, Enter = + ---- */
+document.addEventListener("keydown", e => {
+  if (mode !== "calc") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = $("inAmt"), ae = document.activeElement;
+  // biarkan kolom Tgl (atau input lain) menerima ketikannya sendiri
+  if (ae && ae !== el && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
+  const k = e.key;
+  if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); el.focus(); e.preventDefault(); }
+  else if (k === "."){ if (!el.value.includes(".")) el.value += "."; el.focus(); e.preventDefault(); }
+  else if (k === "Enter" || k === "+"){ commit("+"); el.focus(); e.preventDefault(); }
+  else if (k === "-"){ commit("-"); el.focus(); e.preventDefault(); }
+  else if (k === "Backspace" || k === "Delete"){ backspace(); el.focus(); e.preventDefault(); }
+  else if (k === "Escape"){
+    if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
+    else el.value = "";
+    e.preventDefault();
+  }
 });
 /* init */
 refreshToggles(); applyMode();
