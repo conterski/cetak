@@ -34,6 +34,10 @@
   #calcNav{display:flex; align-items:center; gap:6px; padding:8px 14px 0; font-size:12px; color:var(--muted)}
   #calcNav .btn{background:transparent; color:var(--muted); font-size:15px; padding:4px 8px}
   #btnHist{margin-left:auto; font-size:11px; color:var(--muted); background:transparent}
+  #calcNav #btnZeroC, #calcNav #btnNew{font-size:11px; padding:5px 10px; border-radius:8px; margin-left:8px; font-weight:700}
+  #calcNav #btnZeroC{background:var(--seg); color:var(--muted)}
+  #calcNav #btnZeroC.act{background:var(--on); color:var(--accent)}
+  #calcNav #btnNew{background:var(--on); color:var(--accent)}
   #calcTotal{padding:2px 14px; text-align:right; color:var(--accent); font-weight:700; font-size:15px}
   .inrow{display:flex; gap:8px; padding:6px 14px}
   .inrow input{border:1px solid var(--border); border-radius:10px; background:#f7f8fa;
@@ -133,6 +137,8 @@
     <span id="tapeLbl">Pita 1/1</span>
     <button class="btn" id="btnNext">&#9654;</button>
     <button class="btn" id="btnHist">Hapus riwayat</button>
+    <button class="btn tog" id="btnZeroC" title="Tampilkan baris 0 C di awal tiap pita">0 C</button>
+    <button class="btn" id="btnNew" title="Buat pita baru">Baru</button>
   </div>
   <div id="calcTotal">Total: 0 (0 item)</div>
   <div id="calcKeys">
@@ -351,7 +357,8 @@ function resolveTape(events){
   }
   return [res, total, count];
 }
-function renderCalcTape(events, numbered, cols, now, headers){
+function renderCalcTape(events, numbered, cols, now, headers, zeroc){
+  if (zeroc === undefined) zeroc = true;
   const [res] = resolveTape(events);
   const out = [], lineMap = {};
   if (headers) out.push(...headerLines(now, cols));
@@ -375,7 +382,8 @@ function renderCalcTape(events, numbered, cols, now, headers){
     } else if (op[0]==="s"){
       out.push(fmtAmount(op[1]).padStart(cols-2) + " S");
     } else if (op[0]==="c"){
-      out.push("0".padStart(cols-2) + " C"); n = 0;
+      if (zeroc) out.push("0".padStart(cols-2) + " C");
+      n = 0;
     } else {
       out.push(`(${op[2]} item)`.padStart(cols));
       out.push("-".repeat(14).padStart(cols));
@@ -396,6 +404,7 @@ let numbered = localStorage.cdp_num !== "0";
 let headers = localStorage.cdp_head !== "0";
 let autoprint = localStorage.cdp_auto === "1";
 let usedate = localStorage.cdp_usedate === "1";   // kolom tanggal per-baris (default mati)
+let zeroc = localStorage.cdp_zeroc !== "0";       // baris "0 C" di awal tiap pita (default nyala)
 let tapes = [[["c"]]], active = 0, sel = null;
 try {
   const t = JSON.parse(localStorage.cdp_tapes || "null");
@@ -409,6 +418,7 @@ function saveAll(){
   localStorage.cdp_mode = mode; localStorage.cdp_num = numbered ? "1" : "0";
   localStorage.cdp_head = headers ? "1" : "0";
   localStorage.cdp_usedate = usedate ? "1" : "0";
+  localStorage.cdp_zeroc = zeroc ? "1" : "0";
   localStorage.cdp_text = $("txt").value;
   localStorage.cdp_tapes = JSON.stringify(tapes);
 }
@@ -416,13 +426,13 @@ function saveAll(){
 let lineMap = {};
 function currentDraft(){
   if (mode === "calc")
-    return renderCalcTape(curTape(), numbered, COLS, new Date(), headers)[0];
+    return renderCalcTape(curTape(), numbered, COLS, new Date(), headers, zeroc)[0];
   return formatDraft($("txt").value, numbered, COLS, new Date(), mode==="plain", headers);
 }
 function updatePreview(){
   const pv = $("preview");
   if (mode === "calc"){
-    const [text, lmap] = renderCalcTape(curTape(), numbered, COLS, new Date(), headers);
+    const [text, lmap] = renderCalcTape(curTape(), numbered, COLS, new Date(), headers, zeroc);
     lineMap = lmap;
     const lines = text.split("\n");
     pv.innerHTML = lines.map((l, i) => {
@@ -503,6 +513,7 @@ function refreshToggles(){
   $("togNum").classList.toggle("act", numbered);
   $("togHead").classList.toggle("act", headers);
   $("togAuto").classList.toggle("act", autoprint);
+  $("btnZeroC").classList.toggle("act", zeroc);
   document.querySelectorAll("#segMode .btn").forEach(b =>
     b.classList.toggle("act", b.dataset.m === mode));
 }
@@ -519,7 +530,7 @@ function applyMode(){
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
   $("togAuto").style.display = mode === "calc" ? "" : "none";
   $("btlog").style.display = mode === "calc" ? "none" : "";
-  if (mode === "calc") keyCA(true);
+  if (mode === "calc") keyNew(true);   // masuk mode kalkulator -> mulai pita baru
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
   // siap diketik: fokus ke kolom Tanggal jika aktif, selain itu ke Nominal
@@ -606,7 +617,17 @@ function keyTot(){
   refreshCalcHead(); updatePreview(); saveAll();
   if (autoprint) doPrint(true);  // langsung cetak jika Auto-cetak aktif
 }
+/* CA = bersihkan semua baris pita ini, sisakan "0 C" saja */
 function keyCA(silent){
+  clearSel();
+  const t = curTape();
+  t.length = 0;
+  t.push(["c"]);
+  refreshCalcHead(); updatePreview(); saveAll();
+  if (!silent) setStat("Semua baris dihapus.");
+}
+/* Baru = buat pita baru (pita lama tersimpan sebagai riwayat, maks 6) */
+function keyNew(silent){
   clearSel();
   const newest = tapes[tapes.length-1];
   if (newest.some(ev => ev[0]==="e")){
@@ -855,6 +876,11 @@ $("btnHist").onclick = () => {
   if (!confirm("Hapus SEMUA riwayat pita?")) return;
   tapes = [[["c"]]]; active = 0; clearSel();
   refreshCalcHead(); updatePreview(); saveAll(); setStat("Riwayat dihapus.","ok");
+};
+$("btnNew").onclick = () => keyNew();
+$("btnZeroC").onclick = () => {
+  zeroc = !zeroc; saveAll(); refreshToggles(); updatePreview();
+  setStat(zeroc ? "Baris 0 C ditampilkan." : "Baris 0 C disembunyikan.");
 };
 $("btnDelRow").onclick = delRow;
 $("btnCancelEdit").onclick = () => { clearSel(); updatePreview(); setStat("Edit dibatalkan."); };
