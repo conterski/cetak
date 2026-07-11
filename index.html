@@ -18,7 +18,7 @@
   .btn{border:0; border-radius:10px; cursor:pointer; font-family:inherit}
   #btnBT{background:var(--seg); color:var(--muted); padding:9px 12px; font-size:13px; font-weight:600}
   #btnBT.on{background:var(--on); color:var(--accent)}
-  .rowbar{display:flex; gap:6px; padding:6px 14px; flex-wrap:wrap}
+  .rowbar{display:flex; gap:6px; padding:6px 14px; flex-wrap:wrap; align-items:center}
   .seg{display:flex; background:var(--seg); border-radius:10px; padding:3px}
   .seg .btn{background:transparent; color:var(--muted); padding:8px 14px; font-size:13px}
   .seg .btn.act{background:var(--card); color:var(--accent); font-weight:700}
@@ -96,6 +96,9 @@
   /* ====== layar lebar (desktop): kalkulator kiri, pratinjau kanan ====== */
   @media (min-width:768px){
     body{padding-bottom:0}
+    /* baris mode + baris toggle jadi satu baris di tata letak kiri-kanan */
+    .rowbar{display:inline-flex; vertical-align:middle}
+    .rowbar + .rowbar{padding-left:2px}
     #stage{display:flex; gap:14px; align-items:stretch; margin:6px 14px}
     #stage>.card{margin:0}
     #panelText{flex:1.3 1 0; display:flex; flex-direction:column}
@@ -398,7 +401,7 @@ function renderCalcTape(events, numbered, cols, now, headers, zeroc){
       if (zeroc) out.push("0".padStart(cols-2) + " C");
       n = 0;
     } else {
-      out.push(`(${op[2]} item)`.padStart(cols));
+      out.push(`(${op[2]} nota)`.padStart(cols));
       out.push("-".repeat(14).padStart(cols));
       out.push(fmtAmount(op[1]).padStart(cols-2) + " *");
       out.push(""); n = 0;
@@ -596,7 +599,7 @@ function refreshToggles(){
 }
 function refreshCalcHead(){
   const [, sum, count] = resolveTape(curTape());
-  $("calcTotal").textContent = `Total: ${fmtAmount(sum)} (${count} item)`;
+  $("calcTotal").textContent = `Total: ${fmtAmount(sum)} (${count} nota)`;
   const hist = active === tapes.length-1 ? "" : " (riwayat)";
   $("tapeLbl").textContent = `Pita ${active+1}/${tapes.length}${hist}`;
 }
@@ -700,6 +703,26 @@ function selectRow(i){
   $("editLbl").textContent = `Edit baris ${no}`;
   $("editBar").style.display = "flex";
   updatePreview();
+}
+// indeks baris entri (event "e") pada pita aktif — untuk navigasi panah atas/bawah
+function entryRows(){
+  const t = curTape(), o = [];
+  for (let i = 0; i < t.length; i++) if (t[i][0] === "e") o.push(i);
+  return o;
+}
+function selectPrev(){          // panah atas: pilih baris entri sebelumnya
+  const idx = entryRows();
+  if (!idx.length) return;
+  if (sel === null) selectRow(idx[idx.length - 1]);   // dari input baru -> baris terakhir
+  else { const p = idx.indexOf(sel); if (p > 0) selectRow(idx[p - 1]); }
+  $("inAmt").focus();
+}
+function selectNext(){          // panah bawah: baris berikutnya, atau kembali ke input baru
+  if (sel === null) return;
+  const idx = entryRows(), p = idx.indexOf(sel);
+  if (p > -1 && p < idx.length - 1) selectRow(idx[p + 1]);
+  else { clearSel(); updatePreview(); }
+  $("inAmt").focus();
 }
 function liveComma(){
   const el = $("inAmt");
@@ -1064,7 +1087,9 @@ document.addEventListener("keydown", e => {
     if (usedate && el.selectionStart === 0 && el.selectionEnd === 0){ focusDate(); e.preventDefault(); }
     return;   // selain di ujung: biarkan caret bergerak normal
   }
-  if (k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") return;  // caret normal
+  if (k === "ArrowRight") return;  // caret normal
+  if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); return; }    // pilih baris sebelumnya
+  if (k === "ArrowDown"){ selectNext(); e.preventDefault(); return; }  // pilih baris berikutnya
   if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); el.focus(); e.preventDefault(); }
   else if (k === "."){ if (!el.value.includes(".")) el.value += "."; el.focus(); e.preventDefault(); }
   else if (k === "Enter" || k === "+"){ commit("+"); e.preventDefault(); }  // commit atur fokus
@@ -1094,7 +1119,9 @@ $("inDate").addEventListener("keydown", e => {
     if (el.selectionStart >= el.value.length){
       setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
     }
-  } else if (k === "Backspace" || k === "Delete"){
+  } else if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); }     // pilih baris sebelumnya
+  else if (k === "ArrowDown"){ selectNext(); e.preventDefault(); }     // pilih baris berikutnya
+  else if (k === "Backspace" || k === "Delete"){
     // kolom kosong -> hapus baris pita (mis. baris TOTAL), sama seperti di Nominal
     backspaceDate(); e.preventDefault();
   } else if (k === "Escape"){
