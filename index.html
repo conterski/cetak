@@ -8,7 +8,7 @@
   :root{
     --bg:#f4f5f7; --card:#fff; --border:#e2e4e8; --accent:#2563eb;
     --accent-dark:#1e50c8; --text:#1f2328; --muted:#6f7680;
-    --ok:#15803d; --err:#b91c1c; --seg:#e8eaee; --on:#dbe7ff;
+    --ok:#15803d; --err:#b91c1c; --seg:#e8eaee; --on:#dbe7ff; --input:#f7f8fa;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   body{margin:0; background:var(--bg); color:var(--text);
@@ -18,6 +18,10 @@
   .btn{border:0; border-radius:10px; cursor:pointer; font-family:inherit}
   #btnBT{background:var(--seg); color:var(--muted); padding:9px 12px; font-size:13px; font-weight:600}
   #btnBT.on{background:var(--on); color:var(--accent)}
+  /* pilihan printer (hanya tampil bila jembatan cetak PC terdeteksi) */
+  #selPrinter{display:none; background:var(--seg); color:var(--text); border:0;
+              border-radius:10px; padding:9px 10px; font-size:13px; font-family:inherit;
+              max-width:48vw}
   .rowbar{display:flex; gap:6px; padding:6px 14px; flex-wrap:wrap; align-items:center}
   .seg{display:flex; background:var(--seg); border-radius:10px; padding:3px}
   .seg .btn{background:transparent; color:var(--muted); padding:8px 14px; font-size:13px}
@@ -30,6 +34,15 @@
              letter-spacing:.4px}
   textarea{width:100%; border:0; outline:none; font:inherit; font-size:16px;
            padding:8px 14px 12px; min-height:170px; resize:vertical; background:transparent}
+  /* mode excel: kisi Barang | Qty | Sat */
+  #gridWrap{padding:4px 10px 12px}
+  #grid{width:100%; border-collapse:collapse}
+  #grid th{font-size:10px; font-weight:700; color:var(--muted); text-align:left; padding:0 6px 4px}
+  #grid th.cq{width:96px} #grid th.cu{width:72px}
+  #grid td{padding:3px 4px}
+  #grid input{width:100%; border:1px solid var(--border); border-radius:8px; background:var(--input);
+              font:inherit; font-size:15px; padding:9px 10px; outline:none}
+  #grid input:focus{border-color:var(--accent)}
   /* kalkulator */
   #calcNav{display:flex; align-items:center; gap:6px; padding:8px 14px 0; font-size:12px; color:var(--muted)}
   #calcNav .btn{background:transparent; color:var(--muted); font-size:15px; padding:4px 8px}
@@ -40,7 +53,7 @@
   #calcNav #btnNew{background:var(--on); color:var(--accent)}
   #calcTotal{padding:2px 14px; text-align:right; color:var(--accent); font-weight:700; font-size:15px}
   .inrow{display:flex; gap:8px; padding:6px 14px}
-  .inrow input{border:1px solid var(--border); border-radius:10px; background:#f7f8fa;
+  .inrow input{border:1px solid var(--border); border-radius:10px; background:var(--input);
                font-family:ui-monospace,Menlo,monospace; outline:none; padding:10px}
   #inDate{width:88px; font-size:15px; text-align:center}
   #inAmt{flex:1; font-size:22px; text-align:right; min-width:0}
@@ -93,7 +106,7 @@
   /* caption kalkulator: judul + tombol toggle Tanggal (tampil di semua ukuran) */
   .calcCap{display:flex; align-items:center; gap:10px}
   #togDate{padding:5px 10px; font-size:11px}
-  /* ====== layar lebar (desktop): kalkulator kiri, pratinjau kanan ====== */
+  /* ====== layar lebar (desktop): input kiri, pratinjau kanan ====== */
   @media (min-width:768px){
     body{padding-bottom:0}
     /* baris mode + baris toggle jadi satu baris di tata letak kiri-kanan */
@@ -103,6 +116,8 @@
     #stage>.card{margin:0}
     #panelText{flex:1.3 1 0; display:flex; flex-direction:column}
     #panelText textarea{flex:1 1 auto; min-height:0}
+    #panelExcel{flex:1.3 1 0; display:flex; flex-direction:column}
+    #panelExcel #gridWrap{flex:1 1 auto; min-height:0; overflow-y:auto}
     #panelCalc{flex:0 0 360px; display:flex; flex-direction:column}
     #panelCalc #calcKeys{flex:1 1 auto; display:flex; flex-direction:column}
     #panelCalc #pad{flex:1 1 auto; grid-auto-rows:1fr}
@@ -119,6 +134,7 @@
 
 <div class="top">
   <h1>Cetak Draft Pesanan</h1>
+  <select id="selPrinter" title="Pilih printer"></select>
   <button class="btn" id="btnBT">&#9679; Hubungkan</button>
 </div>
 
@@ -126,6 +142,7 @@
   <div class="seg" id="segMode">
     <button class="btn" data-m="table">Tabel</button>
     <button class="btn" data-m="plain">Teks polos</button>
+    <button class="btn" data-m="excel">Excel</button>
     <button class="btn" data-m="calc">Kalkulator</button>
   </div>
 </div>
@@ -140,6 +157,14 @@
 <div class="card" id="panelText">
   <div class="cap" id="capText">KETIK PESANAN — SATU BARANG PER BARIS</div>
   <textarea id="txt" placeholder="Besi beton 8 mm 10 btg&#10;Semen 5 sak&#10;Gypsum 6 lbr"></textarea>
+</div>
+
+<div class="card" id="panelExcel" style="display:none">
+  <div class="cap">TABEL PESANAN — QTY BISA DIHITUNG, MIS. 5+3-2</div>
+  <div id="gridWrap"><table id="grid">
+    <thead><tr><th>Barang</th><th class="cq">Qty</th><th class="cu">Sat</th></tr></thead>
+    <tbody id="gridBody"></tbody>
+  </table></div>
 </div>
 
 <div class="card" id="panelCalc" style="display:none">
@@ -201,215 +226,10 @@
   <div id="stat">Siap.</div>
 </div>
 
+<!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
+<script src="core.js?v=3"></script>
 <script>
 "use strict";
-/* ================= format (port dari printapp.py) ================= */
-const COLS = 31, FEED_LINES = 4, LEFT_MARGIN_DOTS = 12;
-
-const UNITS = new Set(["btg","btng","batang","bh","buah","bj","biji","lbr","lembar",
- "lmbr","sak","zak","kg","ons","gr","gram","ltr","lt","liter","gln","galon","m","mtr",
- "meter","m2","m3","kubik","kbk","roll","rol","dus","box","pcs","pc","pak","pack",
- "ikat","keping","kaleng","klg","set","unit","pasang","psg","btl","botol","ember",
- "drum","karung","krg","lusin","kodi","rim","papan"]);
-
-const QTY_RE=/^\d+(?:[.,\/]\d+)?$/, UNIT_RE=/^[A-Za-z]{1,8}$/,
- GLUED_RE=/^(\d+(?:[.,\/]\d+)?)([A-Za-z][A-Za-z0-9]{0,7})$/,
- NOTE_RE=/\(\s*([^()]*?)\s*\)\s*$/,
- LIST_PREFIX_RE=/^\d{1,2}\s*[.)]+\s*(?=[^\d\s])/,
- COMMA_PREFIX_RE=/^\d{1,2},(?=[A-Za-z])/,
- EQ_QTY_RE=/^(.+?)\s*=\s*(\d+(?:[.,\/]\d+)?)$/,
- QTY_FIRST_RE=/^(\d+(?:[.,\/]\d+)?)\s*([A-Za-z][A-Za-z0-9]{0,7})\s+(.+)$/;
-
-const norm = s => s.trim().split(/\s+/).join(" ");
-
-function cleanItem(item){
-  item = item.replace(/\s*\.{2,}\s*/g," ").replace(/(^|\s)\.+(?=[A-Za-z0-9])/g,"$1");
-  item = item.replace(/^[\s.,\-_]+|[\s.,\-_]+$/g,"");
-  return norm(item);
-}
-function tryQtyFirst(s){
-  const m = s.match(QTY_FIRST_RE);
-  if (m && UNITS.has(m[2].toLowerCase())) return [m[3], m[1], m[2]];
-  return null;
-}
-function tryQtyLast(s){
-  const t = s.split(/\s+/).filter(Boolean);
-  if (t.length>=3 && QTY_RE.test(t[t.length-2]) && UNIT_RE.test(t[t.length-1]))
-    return [t.slice(0,-2).join(" "), t[t.length-2], t[t.length-1]];
-  if (t.length>=2){
-    const m = t[t.length-1].match(GLUED_RE);
-    if (m && (/^[A-Za-z]+$/.test(m[2]) || UNITS.has(m[2].toLowerCase())))
-      return [t.slice(0,-1).join(" "), m[1], m[2]];
-  }
-  return null;
-}
-function parseLine(line, expectedNo){
-  let s = norm(line), note = null;
-  const nm = s.match(NOTE_RE);
-  if (nm){ note = nm[1]; s = s.slice(0, nm.index).trim(); }
-  s = s.replace(LIST_PREFIX_RE,"").replace(COMMA_PREFIX_RE,"");
-  if (expectedNo != null){
-    const g = s.match(/^(\d{1,2})(?=[A-Za-z])/);
-    if (g && parseInt(g[1]) === expectedNo) s = s.slice(g[1].length);
-  }
-  let parsed = tryQtyFirst(s);
-  if (!parsed && expectedNo != null){
-    const t = s.split(/\s+/).filter(Boolean);
-    if (t.length>=2 && /^\d+$/.test(t[0]) && parseInt(t[0])===expectedNo && !tryQtyFirst(s)){
-      const rest = t.slice(1).join(" ");
-      if (EQ_QTY_RE.test(rest) || tryQtyLast(rest) || tryQtyFirst(rest)){
-        s = rest; parsed = tryQtyFirst(s);
-      }
-    }
-  }
-  if (!parsed){ const m = s.match(EQ_QTY_RE); if (m) parsed = [m[1], m[2], ""]; }
-  if (!parsed) parsed = tryQtyLast(s);
-  let [item, qty, unit] = parsed || [s, null, null];
-  item = cleanItem(item);
-  if (note) item = (item + " (" + note + ")").trim();
-  return [item, qty, unit];
-}
-function wrapWords(text, width){
-  const words = text.split(/\s+/).filter(Boolean), lines = [];
-  let cur = "";
-  for (let w of words){
-    if (!cur) cur = w;
-    else if (cur.length + 1 + w.length <= width) cur += " " + w;
-    else { lines.push(cur); cur = w; }
-    while (cur.length > width){ lines.push(cur.slice(0,width)); cur = cur.slice(width); }
-  }
-  if (cur) lines.push(cur);
-  return lines.length ? lines : [""];
-}
-function pad2(n){ return String(n).padStart(2,"0"); }
-function headerLines(now, cols){
-  const stamp = `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()} ` +
-                `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
-  const pad = Math.max(0, Math.floor((cols - stamp.length)/2));
-  return [" ".repeat(pad) + stamp, "-".repeat(cols)];
-}
-function renderTable(rows, numbered, cols, now, headers){
-  const out = [];
-  if (headers) out.push(...headerLines(now, cols));
-  if (rows.length){
-    const qtyW = rows.reduce((w,r)=> r[1] ? Math.max(w, r[1].length) : w, 3);
-    const unitW = rows.reduce((w,r)=> r[2] ? Math.max(w, r[2].length) : w, 4);
-    const noW = numbered ? String(rows.length).length + 1 : 0;
-    if (headers){
-      let h = numbered ? "No".padEnd(noW) + " " : "";
-      h += "Qty".padStart(qtyW) + " " + "Unit".padEnd(unitW) + " Item";
-      out.push(h.slice(0, cols), "-".repeat(cols));
-    }
-    const prefixW = (numbered ? noW + 1 : 0) + qtyW + 1 + unitW + 1;
-    const itemW = Math.max(cols - prefixW, 8);
-    rows.forEach((r, idx) => {
-      const [item, qty, unit] = r;
-      const no = numbered ? (String(idx+1)+".").padEnd(noW) + " " : "";
-      if (qty != null){
-        const first = no + qty.padStart(qtyW) + " " + (unit||"").padEnd(unitW) + " ";
-        const ch = wrapWords(item, itemW);
-        out.push((first + ch[0]).replace(/\s+$/,""));
-        for (let c of ch.slice(1)) out.push(" ".repeat(prefixW) + c);
-      } else {
-        const ch = wrapWords(item, cols - no.length);
-        out.push((no + ch[0]).replace(/\s+$/,""));
-        for (let c of ch.slice(1)) out.push(" ".repeat(no.length) + c);
-      }
-    });
-  }
-  if (headers) out.push("-".repeat(cols));
-  return out.join("\n");
-}
-function formatPlain(text, numbered, cols, now, headers){
-  const out = [];
-  if (headers) out.push(...headerLines(now, cols));
-  let lines = text.split("\n").map(l => l.replace(/\s+$/,""));
-  while (lines.length && !lines[0].trim()) lines.shift();
-  while (lines.length && !lines[lines.length-1].trim()) lines.pop();
-  let n = 0, prevBlank = false;
-  for (let line of lines){
-    if (!line.trim()){ if (!prevBlank) out.push(""); prevBlank = true; continue; }
-    prevBlank = false; line = norm(line);
-    let prefix = "";
-    if (numbered){ n += 1; prefix = n + ". "; }
-    const indent = numbered ? prefix.length : 2;
-    const ch = wrapWords(line, cols - indent);
-    out.push(prefix + ch[0]);
-    for (let c of ch.slice(1)) out.push(" ".repeat(indent) + c);
-  }
-  if (headers) out.push("-".repeat(cols));
-  return out.join("\n");
-}
-function formatDraft(text, numbered, cols, now, plain, headers){
-  if (plain) return formatPlain(text, numbered, cols, now, headers);
-  const rows = []; let pos = 0;
-  for (let l of text.split("\n")){
-    if (!l.trim()){ pos = 0; continue; }
-    pos += 1; rows.push(parseLine(l, pos));
-  }
-  return renderTable(rows, numbered, cols, now, headers);
-}
-/* ---- kalkulator ---- */
-function parseAmount(s){
-  s = s.trim().replace(/,/g,"");
-  if (!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
-  const v = parseFloat(s);
-  return isNaN(v) ? null : v;
-}
-function fmtAmount(v){
-  const neg = v < 0;
-  let s = Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-  if (s.endsWith(".00")) s = s.slice(0,-3);
-  return (neg ? "-" : "") + s;
-}
-function resolveTape(events){
-  let total = 0, count = 0;
-  const res = [];
-  for (const ev of events){
-    if (ev[0]==="e"){ total += ev[2]==="+" ? ev[1] : -ev[1]; count++; res.push(ev); }
-    else if (ev[0]==="s") res.push(["s", total]);
-    else if (ev[0]==="c"){ res.push(["c"]); total = 0; count = 0; }
-    else if (ev[0]==="t"){ res.push(["t", total, count]); total = 0; count = 0; }
-  }
-  return [res, total, count];
-}
-function renderCalcTape(events, numbered, cols, now, headers, zeroc){
-  if (zeroc === undefined) zeroc = true;
-  const [res] = resolveTape(events);
-  const out = [], lineMap = {};
-  if (headers) out.push(...headerLines(now, cols));
-  const entries = res.filter(op => op[0]==="e");
-  const dateW = entries.reduce((w,op)=> op[3] ? Math.max(w, op[3].length) : w, 0);
-  let n = 0, maxN = 0;
-  for (const op of res){
-    if (op[0]==="e"){ n++; maxN = Math.max(maxN, n); }
-    else if (op[0]==="t" || op[0]==="c") n = 0;
-  }
-  const noW = (numbered && maxN) ? String(maxN).length + 1 : 0;
-  n = 0;
-  res.forEach((op, i) => {
-    if (op[0]==="e"){
-      n++;
-      let prefix = numbered ? (n+".").padEnd(noW) : "";
-      if (dateW) prefix += (prefix ? " " : "") + (op[3]||"").padEnd(dateW);
-      const amt = fmtAmount(op[1]);
-      lineMap[out.length] = i;
-      out.push(prefix + amt.padStart(Math.max(cols - prefix.length - 2, amt.length)) + " " + op[2]);
-    } else if (op[0]==="s"){
-      out.push(fmtAmount(op[1]).padStart(cols-2) + " S");
-    } else if (op[0]==="c"){
-      if (zeroc) out.push("0".padStart(cols-2) + " C");
-      n = 0;
-    } else {
-      out.push(`(${op[2]} nota)`.padStart(cols));
-      out.push("-".repeat(14).padStart(cols));
-      out.push(fmtAmount(op[1]).padStart(cols-2) + " *");
-      out.push(""); n = 0;
-    }
-  });
-  if (headers) out.push("-".repeat(cols));
-  return [out.join("\n"), lineMap];
-}
 /* ================= status & state ================= */
 const $ = id => document.getElementById(id);
 const statEl = $("stat");
@@ -437,12 +257,68 @@ function saveAll(){
   localStorage.cdp_zeroc = zeroc ? "1" : "0";
   localStorage.cdp_text = $("txt").value;
   localStorage.cdp_tapes = JSON.stringify(tapes);
+  localStorage.cdp_grid = JSON.stringify([...$("gridBody").rows]
+    .map(tr => gridInputs(tr).map(i => i.value))
+    .filter(r => r.some(v => v.trim())));
+}
+/* ================= mode excel: kisi Barang | Qty | Sat ================= */
+function gridInputs(tr){ return [...tr.querySelectorAll("input")]; }
+function addGridRow(){
+  const tr = document.createElement("tr");
+  for (const cls of ["gi","gq","gu"]){
+    const td = document.createElement("td"), inp = document.createElement("input");
+    inp.className = cls;
+    td.appendChild(inp); tr.appendChild(td);
+  }
+  $("gridBody").appendChild(tr);
+  gridInputs(tr).forEach((inp, k) => {
+    inp.addEventListener("input", onGridChange);
+    inp.addEventListener("keydown", e => {          // Enter: sel berikut / baris baru
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      if (k < 2){ gridInputs(tr)[k+1].focus(); return; }
+      let next = tr.nextElementSibling;
+      if (!next){ addGridRow(); next = tr.nextElementSibling; }
+      gridInputs(next)[0].focus();
+    });
+  });
+  return tr;
+}
+function onGridChange(){
+  const rows = [...$("gridBody").rows];
+  if (rows.length && gridInputs(rows[rows.length-1]).some(i => i.value.trim())) addGridRow();
+  updatePreview(); saveAll();
+}
+function gridData(){
+  const out = [];
+  for (const tr of $("gridBody").rows){
+    const [item, qty, unit] = gridInputs(tr).map(i => i.value.trim());
+    if (!(item || qty || unit)) continue;
+    if (qty) out.push([item, evalQty(qty), unit]);
+    else out.push([(item + " " + unit).trim(), null, null]);
+  }
+  return out;
+}
+function clearGrid(){ $("gridBody").innerHTML = ""; addGridRow(); }
+/* muat ulang isi kisi dari penyimpanan (bertahan seperti teks & pita) */
+function restoreGrid(){
+  $("gridBody").innerHTML = "";
+  let saved = [];
+  try { saved = JSON.parse(localStorage.cdp_grid || "[]"); } catch(e){}
+  for (const vals of saved){
+    if (!Array.isArray(vals)) continue;
+    const tr = addGridRow();
+    gridInputs(tr).forEach((inp, i) => { inp.value = String(vals[i] || ""); });
+  }
+  addGridRow();   // selalu ada baris kosong di akhir
 }
 /* ================= pratinjau & UI ================= */
 let lineMap = {};
 function currentDraft(){
   if (mode === "calc")
     return renderCalcTape(curTape(), numbered, COLS, new Date(), headers, zeroc)[0];
+  if (mode === "excel")
+    return renderTable(gridData(), numbered, COLS, new Date(), headers);
   return formatDraft($("txt").value, numbered, COLS, new Date(), mode==="plain", headers);
 }
 function updatePreview(){
@@ -476,7 +352,7 @@ const mqDesktop = window.matchMedia("(min-width:768px)");
 const isDesktop = () => mqDesktop.matches;
 
 /* desktop: tinggi panggung mengisi ruang sampai bilah CETAK, agar
-   kalkulator (kiri) & pratinjau (kanan) sama tinggi & sejajar */
+   panel kiri & pratinjau kanan sama tinggi & sejajar */
 function layoutDesktop(){
   const stage = $("stage");
   if (!isDesktop()){ stage.style.height = ""; return; }
@@ -604,7 +480,8 @@ function refreshCalcHead(){
   $("tapeLbl").textContent = `Pita ${active+1}/${tapes.length}${hist}`;
 }
 function applyMode(){
-  $("panelText").style.display = mode === "calc" ? "none" : "";
+  $("panelText").style.display = (mode === "calc" || mode === "excel") ? "none" : "";
+  $("panelExcel").style.display = mode === "excel" ? "" : "none";
   $("panelCalc").style.display = mode === "calc" ? "" : "none";
   $("capText").textContent = mode === "plain"
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
@@ -613,36 +490,16 @@ function applyMode(){
   if (mode === "calc") keyNew(true);   // masuk mode kalkulator -> mulai pita baru
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
-  // siap diketik: fokus ke kolom Tanggal jika aktif, selain itu ke Nominal
-  if (mode === "calc" && isDesktop()) (usedate ? $("inDate") : $("inAmt")).focus();
+  // siap diketik: fokus ke kolom pertama sesuai mode (hanya desktop)
+  if (isDesktop()){
+    if (mode === "calc") (usedate ? $("inDate") : $("inAmt")).focus();
+    else if (mode === "excel"){
+      const first = $("gridBody").rows[0];
+      if (first) gridInputs(first)[0].focus();
+    }
+  }
 }
-/* ================= kolom tanggal (d/m) ================= */
-/* input 4 angka DDMM -> tampil "d/m" (buang nol depan). mis. 0907 -> 9/7 */
-function fmtDate(raw){
-  raw = String(raw || "").replace(/\D/g,"").slice(0,4);
-  if (raw.length <= 2) return raw;                 // masih mengetik hari
-  const d = String(parseInt(raw.slice(0,2), 10));
-  const mRaw = raw.slice(2);
-  const m = mRaw.length === 2 ? String(parseInt(mRaw, 10)) : mRaw;
-  return d + "/" + m;
-}
-/* tanggal sah = 4 angka DDMM, hari 1..31, bulan 1..12 */
-function dateValid(raw){
-  raw = String(raw || "");
-  if (!/^\d{4}$/.test(raw)) return false;
-  const d = parseInt(raw.slice(0,2), 10), m = parseInt(raw.slice(2), 10);
-  return d >= 1 && d <= 31 && m >= 1 && m <= 12;
-}
-/* "9/7" -> "0907" (untuk memuat ulang saat mengedit baris) */
-function dateToRaw(disp){
-  disp = String(disp || "").trim();
-  if (!disp) return "";
-  const p = disp.split("/");
-  const d = (p[0] || "").replace(/\D/g,"");
-  const m = (p[1] || "").replace(/\D/g,"");
-  if (p.length < 2) return d.slice(0,4);
-  return (d.padStart(2,"0").slice(0,2)) + (m.padStart(2,"0").slice(0,2));
-}
+/* ================= kolom tanggal: tampilan (logika di core.js) ================= */
 function setDate(raw){
   const el = $("inDate");
   raw = String(raw || "").replace(/\D/g,"").slice(0,4);
@@ -808,8 +665,6 @@ function deleteLastRow(){
   }
   return false;
 }
-/* tombol ⌫ / Backspace: ada isi -> hapus 1 angka; kolom kosong -> hapus baris.
-   saat sedang mengedit baris & kolom dikosongkan -> hapus baris itu. */
 /* hapus baris pita: yang sedang diedit, atau baris terakhir */
 function deleteRowNow(){ if (sel !== null) delRow(); else deleteLastRow(); }
 /* ⌫ di Nominal: ada isi -> hapus 1 angka; kosong -> mundur ke kolom kiri (Tanggal).
@@ -826,6 +681,79 @@ function deleteFromAmt(){
   if (el.value){ el.value = el.value.slice(0,-1); liveComma(); focusAmt(); return; }
   deleteRowNow();
   if (usedate) focusDate(); else focusAmt();
+}
+/* ================= jembatan cetak PC (bridge.py) ================= */
+/* Jika halaman disajikan bridge.py di PC, cetak lewat COM/antrean Windows;
+   jika tidak (GitHub Pages / iPhone), pakai Bluetooth LE di bawah. */
+let bridge = false;
+async function initBridge(){
+  let j;
+  try {
+    const r = await fetch("api/ping", {cache:"no-store"});
+    if (!r.ok) return;
+    j = await r.json();
+    if (!j.ok) return;
+  } catch(e){ return; }   // tak ada jembatan -> mode Bluetooth (iPhone)
+  bridge = true;
+  $("btnBT").style.display = "none";
+  const sel = $("selPrinter");
+  sel.style.display = "inline-block";   // CSS bawaannya display:none
+  await loadPrinters(j.printer || "");
+  sel.onchange = () => { localStorage.cdp_printer = sel.value; };
+  setStat(sel.value ? `Siap - printer: ${sel.value}` : "Siap - pilih printer dulu.");
+  autoClip();
+}
+async function loadPrinters(cfgSaved){
+  try {
+    const j = await (await fetch("api/printers", {cache:"no-store"})).json();
+    const sel = $("selPrinter");
+    sel.innerHTML = "";
+    for (const p of j.printers || []){
+      const o = document.createElement("option");
+      o.value = o.textContent = p;
+      sel.appendChild(o);
+    }
+    const want = [localStorage.cdp_printer, cfgSaved, j.default]
+      .find(w => w && [...sel.options].some(o => o.value === w));
+    if (want) sel.value = want;
+  } catch(e){}
+}
+async function printBridge(draftText){
+  const target = $("selPrinter").value;
+  if (!target){ setStat("Pilih printer dulu.","err"); return; }
+  const btn = $("btnPrint");
+  btn.disabled = true; setStat("Mengirim...");
+  try {
+    const r = await fetch("api/print?target=" + encodeURIComponent(target),
+                          {method:"POST", body: escposPayload(draftText || currentDraft())});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
+    setStat(`Terkirim ke "${target}" ✓`,"ok");
+    saveAll();
+  } catch(e){
+    // fetch gagal total = jembatannya sudah tertutup, bukan printer bermasalah
+    const msg = (e instanceof TypeError)
+      ? 'jembatan cetak tertutup - jalankan "Cetak Draft Web.bat" lagi'
+      : e.message;
+    setStat("Gagal mencetak: " + msg, "err");
+  } finally { btn.disabled = false; }
+}
+/* shortcut "Cetak dari Excel": halaman dibuka dengan ?autoclip=1 ->
+   ambil isi clipboard dari jembatan, format, langsung cetak.
+   Draf yang tersimpan TIDAK disentuh - clipboard diformat & dicetak langsung. */
+async function autoClip(){
+  if (!new URLSearchParams(location.search).has("autoclip")) return;
+  history.replaceState(null, "", location.pathname);  // refresh tidak mencetak ulang
+  try {
+    const j = await (await fetch("api/clipboard")).json();
+    if (!(j.text || "").trim()){
+      setStat("Clipboard kosong - blok sel di Excel lalu Ctrl+C dulu.","err");
+      return;
+    }
+    const draft = formatDraft(j.text, numbered, COLS, new Date(), mode === "plain", headers);
+    $("preview").textContent = draft;   // perlihatkan apa yang dicetak
+    await printBridge(draft);
+  } catch(e){ setStat("Gagal membaca clipboard: " + e.message, "err"); }
 }
 /* ================= Bluetooth LE (ESC/POS) ================= */
 /* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
@@ -953,13 +881,6 @@ async function connectBT(){
     return false;
   }
 }
-function escposPayload(text){
-  const head = [0x1b,0x40, 0x1d,0x4c, LEFT_MARGIN_DOTS & 0xff, LEFT_MARGIN_DOTS >> 8];
-  const body = [];
-  for (const ch of text.replace(/[^\x00-\x7f]/g,"?")) body.push(ch.charCodeAt(0));
-  for (let i = 0; i < FEED_LINES; i++) body.push(0x0a);
-  return new Uint8Array([...head, ...body]);
-}
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function writeOne(part){
   // .properties tak bisa dipercaya di Bluefy: coba tanpa-respons dulu,
@@ -989,17 +910,21 @@ async function bleWrite(bytes){
 }
 /* ================= tombol utama ================= */
 async function doPrint(skipConfirm){
-  const hasContent = mode === "calc"
-    ? curTape().some(ev => ev[0]==="e") : $("txt").value.trim() !== "";
+  const hasContent = mode === "calc" ? curTape().some(ev => ev[0]==="e")
+    : mode === "excel" ? gridData().length > 0
+    : $("txt").value.trim() !== "";
   if (!hasContent){ setStat("Tidak ada yang dicetak.","err"); return; }
   let summary;
   if (mode === "calc"){
     const [res, sum] = resolveTape(curTape());
     summary = `${res.filter(o=>o[0]==="e").length} baris, total ${fmtAmount(sum)}`;
+  } else if (mode === "excel"){
+    summary = `${gridData().length} baris`;
   } else {
     summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
   }
   if (!skipConfirm && !confirm(`Cetak ke printer?\n${summary}`)) { setStat("Dibatalkan."); return; }
+  if (bridge){ await printBridge(); return; }    // PC: lewat jembatan cetak lokal
   // bleChar dikosongkan oleh listener "gattserverdisconnected" saat benar-benar
   // terputus; jangan andalkan gatt.connected (tidak akurat di Bluefy).
   if (!bleChar){
@@ -1016,10 +941,12 @@ async function doPrint(skipConfirm){
   } finally { btn.disabled = false; }
 }
 function doClear(){
-  const hasContent = mode === "calc"
-    ? curTape().some(ev => ev[0]!=="c") : $("txt").value.trim() !== "";
+  const hasContent = mode === "calc" ? curTape().some(ev => ev[0]!=="c")
+    : mode === "excel" ? gridData().length > 0
+    : $("txt").value.trim() !== "";
   if (hasContent && !confirm("Hapus isi tampilan ini?")) return;
   if (mode === "calc"){ curTape().length = 0; curTape().push(["c"]); clearSel(); }
+  else if (mode === "excel") clearGrid();
   else $("txt").value = "";
   refreshCalcHead(); updatePreview(); saveAll(); setStat("Siap.");
 }
@@ -1140,7 +1067,7 @@ $("togDate").onclick = () => {
   }
 };
 /* init */
-initGrip(); applyUsedate(); refreshToggles(); applyMode();
+initGrip(); applyUsedate(); refreshToggles(); restoreGrid(); applyMode(); initBridge();
 </script>
 </body>
 </html>
