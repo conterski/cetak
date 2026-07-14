@@ -137,20 +137,28 @@ function _titleOnly(cells){
 function columnLayout(rowsCells, cols){
   const nCol = Math.max(...rowsCells.map(r => r.length));
   const isNum = s => /^-?[\d.,]+$/.test(s) && /\d/.test(s);
-  const numeric = [], width = [];
+  const align = [], width = [];
   for (let c = 0; c < nCol; c++){
     const filled = rowsCells.map(r => r[c] || "").filter(v => v);
-    numeric.push(filled.length > 0 &&
-                 filled.filter(isNum).length >= filled.length * 0.6);
+    // kolom angka -> rata kanan; tetapi kolom KODE (angka berawalan nol,
+    // mis. nomor PO "021") lebih pantas rata tengah
+    let a = "left";
+    if (filled.length && filled.filter(isNum).length >= filled.length * 0.6)
+      a = filled.some(v => /^0\d/.test(v)) ? "center" : "right";
+    align.push(a);
     width.push(Math.max(1, ...rowsCells.map(r => (r[c] || "").length)));
   }
-  // bila total melebihi kertas: kolom teks terlebar dilipat ke beberapa baris
+  // jarak antarkolom 2 spasi bila muat, kalau tidak 1 spasi
+  const sum = width.reduce((a,b) => a+b, 0);
+  const gap = (sum + (nCol - 1) * 2 <= cols) ? 2 : 1;
+  // bila masih melebihi kertas: kolom teks terlebar dilipat ke beberapa baris
   let wrapCol = 0;
   for (let c = 0; c < nCol; c++)
-    if (!numeric[c] && (numeric[wrapCol] || width[c] > width[wrapCol])) wrapCol = c;
-  const total = width.reduce((a,b) => a+b, 0) + (nCol - 1);
+    if (align[c] === "left" && (align[wrapCol] !== "left" || width[c] > width[wrapCol]))
+      wrapCol = c;
+  const total = sum + (nCol - 1) * gap;
   if (total > cols) width[wrapCol] = Math.max(6, width[wrapCol] - (total - cols));
-  return {nCol, numeric, width, wrapCol};
+  return {nCol, align, width, wrapCol, gap};
 }
 function renderColumnRow(cells, L){
   const out = [];
@@ -159,8 +167,12 @@ function renderColumnRow(cells, L){
     let line = "";
     for (let c = 0; c < L.nCol; c++){
       let v = c === L.wrapCol ? chunk : (k === 0 ? (cells[c] || "") : "");
-      v = L.numeric[c] ? v.padStart(L.width[c]) : v.padEnd(L.width[c]);
-      line += (c ? " " : "") + v;
+      const w = L.width[c];
+      if (L.align[c] === "right") v = v.padStart(w);
+      else if (L.align[c] === "center")
+        v = (" ".repeat(Math.max(0, (w - v.length) >> 1)) + v).padEnd(w);
+      else v = v.padEnd(w);
+      line += (c ? " ".repeat(L.gap) : "") + v;
     }
     out.push(line.replace(/\s+$/,""));
   });
