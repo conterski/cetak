@@ -124,39 +124,46 @@ function renderTable(rows, numbered, cols, now, headers){
   if (headers) out.push("-".repeat(cols));
   return out.join("\n");
 }
-/* Baris-baris ber-tab (tempelan sel Excel) dirapikan menjadi kolom sejajar:
-   lebar tiap kolom mengikuti isi terpanjangnya, kolom angka rata kanan.
-   Jika total melebihi lebar kertas, kolom teks terlebar dilipat ke bawah. */
-function alignColumns(rowsCells, cols){
+/* ---- tempelan sel Excel (baris ber-tab) -> kolom sejajar ----
+   Lebar tiap kolom dihitung SEKALI untuk seluruh tempelan (seperti lebar
+   kolom di lembar Excel), jadi baris total yang dipisah baris kosong tetap
+   sejajar dengan tabelnya. Kolom dianggap "angka" (rata kanan) bila mayoritas
+   isinya angka - baris judul seperti "Jumlah" tidak mengubah itu.
+   Baris yang hanya berisi sel PERTAMA (mis. nama toko di atas tabel)
+   diperlakukan sebagai teks biasa, bukan bagian tabel. */
+function _titleOnly(cells){
+  return cells[0] && cells.slice(1).every(v => !v);
+}
+function columnLayout(rowsCells, cols){
   const nCol = Math.max(...rowsCells.map(r => r.length));
   const isNum = s => /^-?[\d.,]+$/.test(s) && /\d/.test(s);
   const numeric = [], width = [];
   for (let c = 0; c < nCol; c++){
-    const vals = rowsCells.map(r => r[c] || "");
-    const filled = vals.filter(v => v);
-    numeric.push(filled.length > 0 && filled.every(isNum));
-    width.push(Math.max(1, ...vals.map(v => v.length)));
+    const filled = rowsCells.map(r => r[c] || "").filter(v => v);
+    numeric.push(filled.length > 0 &&
+                 filled.filter(isNum).length >= filled.length * 0.6);
+    width.push(Math.max(1, ...rowsCells.map(r => (r[c] || "").length)));
   }
-  // pilih kolom yang akan dilipat bila kertas tak cukup: kolom teks terlebar
+  // bila total melebihi kertas: kolom teks terlebar dilipat ke beberapa baris
   let wrapCol = 0;
   for (let c = 0; c < nCol; c++)
     if (!numeric[c] && (numeric[wrapCol] || width[c] > width[wrapCol])) wrapCol = c;
   const total = width.reduce((a,b) => a+b, 0) + (nCol - 1);
   if (total > cols) width[wrapCol] = Math.max(6, width[wrapCol] - (total - cols));
-
+  return {nCol, numeric, width, wrapCol};
+}
+function renderColumnRow(cells, L){
   const out = [];
-  for (const r of rowsCells){
-    const chunks = wrapWords(r[wrapCol] || "", width[wrapCol]);
-    chunks.forEach((chunk, k) => {
-      let line = "";
-      for (let c = 0; c < nCol; c++){
-        let v = c === wrapCol ? chunk : (k === 0 ? (r[c] || "") : "");
-        v = numeric[c] ? v.padStart(width[c]) : v.padEnd(width[c]);
-        line += (c ? " " : "") + v;
-      }
-      out.push(line.replace(/\s+$/,""));
-    });
-  }
+  const chunks = wrapWords(cells[L.wrapCol] || "", L.width[L.wrapCol]);
+  chunks.forEach((chunk, k) => {
+    let line = "";
+    for (let c = 0; c < L.nCol; c++){
+      let v = c === L.wrapCol ? chunk : (k === 0 ? (cells[c] || "") : "");
+      v = L.numeric[c] ? v.padStart(L.width[c]) : v.padEnd(L.width[c]);
+      line += (c ? " " : "") + v;
+    }
+    out.push(line.replace(/\s+$/,""));
+  });
   return out;
 }
 function formatPlain(text, numbered, cols, now, headers){
@@ -165,20 +172,26 @@ function formatPlain(text, numbered, cols, now, headers){
   let lines = text.split("\n").map(l => l.replace(/\s+$/,""));
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length-1].trim()) lines.pop();
-  let n = 0, prevBlank = false, tabBlock = [];
-  const flushTabs = () => {
-    if (!tabBlock.length) return;
-    out.push(...alignColumns(tabBlock, cols));
-    tabBlock = [];
-  };
+  // hitung tata letak kolom dari semua baris tabel dalam tempelan
+  const tabRows = [];
+  for (const l of lines){
+    if (!l.trim() || !l.includes("\t")) continue;
+    const cells = l.split("\t").map(norm);
+    if (!_titleOnly(cells)) tabRows.push(cells);
+  }
+  const layout = tabRows.length ? columnLayout(tabRows, cols) : null;
+  let n = 0, prevBlank = false;
   for (let line of lines){
-    if (!line.trim()){ flushTabs(); if (!prevBlank) out.push(""); prevBlank = true; continue; }
+    if (!line.trim()){ if (!prevBlank) out.push(""); prevBlank = true; continue; }
     prevBlank = false;
-    if (line.includes("\t")){          // tempelan Excel: kumpulkan, sejajarkan kolomnya
-      tabBlock.push(line.split("\t").map(norm));
-      continue;
+    if (line.includes("\t") && layout){
+      const cells = line.split("\t").map(norm);
+      if (!_titleOnly(cells)){
+        out.push(...renderColumnRow(cells, layout));
+        continue;
+      }
+      line = cells[0];               // baris judul: lanjut sebagai teks biasa
     }
-    flushTabs();
     line = norm(line);
     let prefix = "";
     if (numbered){ n += 1; prefix = n + ". "; }
@@ -187,7 +200,6 @@ function formatPlain(text, numbered, cols, now, headers){
     out.push(prefix + ch[0]);
     for (let c of ch.slice(1)) out.push(" ".repeat(indent) + c);
   }
-  flushTabs();
   if (headers) out.push("-".repeat(cols));
   return out.join("\n");
 }
