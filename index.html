@@ -227,7 +227,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=6"></script>
+<script src="core.js?v=7"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -958,6 +958,15 @@ $("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); 
 $("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
   setStat(autoprint ? "Auto-cetak aktif: TOTAL langsung mencetak." : "Auto-cetak mati."); };
 $("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
+/* tempelan sel Excel (ber-tab) di mode Tabel -> otomatis pindah ke Teks polos,
+   supaya kolom & baris kosongnya tercetak persis seperti di Excel */
+$("txt").addEventListener("paste", e => {
+  const t = (e.clipboardData || window.clipboardData).getData("text");
+  if (t && t.includes("\t") && mode === "table"){
+    mode = "plain"; saveAll(); applyMode();
+    setStat("Tempelan Excel terdeteksi - pindah ke Teks polos agar kolom sejajar.");
+  }
+});
 $("btnBT").onclick = connectBT;
 $("btnPrint").onclick = () => doPrint(false);
 $("btnClear").onclick = doClear;
