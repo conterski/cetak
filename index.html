@@ -227,7 +227,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=8"></script>
+<script src="core.js?v=9"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -750,7 +750,11 @@ async function autoClip(){
       setStat("Clipboard kosong - blok sel di Excel lalu Ctrl+C dulu.","err");
       return;
     }
-    const draft = formatDraft(j.text, numbered, COLS, new Date(), mode === "plain", headers);
+    // sel Excel (ber-tab) SELALU dicetak sebagai kolom sejajar apa adanya,
+    // tanpa nomor urut tambahan - apa pun mode aplikasi yang tersimpan
+    const isTab = j.text.includes("\t");
+    const draft = formatDraft(j.text, isTab ? false : numbered, COLS, new Date(),
+                              isTab || mode === "plain", headers);
     $("preview").textContent = draft;   // perlihatkan apa yang dicetak
     await printBridge(draft);
   } catch(e){ setStat("Gagal membaca clipboard: " + e.message, "err"); }
