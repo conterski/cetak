@@ -34,15 +34,6 @@
              letter-spacing:.4px}
   textarea{width:100%; border:0; outline:none; font:inherit; font-size:16px;
            padding:8px 14px 12px; min-height:170px; resize:vertical; background:transparent}
-  /* mode excel: kisi Barang | Qty | Sat */
-  #gridWrap{padding:4px 10px 12px}
-  #grid{width:100%; border-collapse:collapse}
-  #grid th{font-size:10px; font-weight:700; color:var(--muted); text-align:left; padding:0 6px 4px}
-  #grid th.cq{width:96px} #grid th.cu{width:72px}
-  #grid td{padding:3px 4px}
-  #grid input{width:100%; border:1px solid var(--border); border-radius:8px; background:var(--input);
-              font:inherit; font-size:15px; padding:9px 10px; outline:none}
-  #grid input:focus{border-color:var(--accent)}
   /* kalkulator */
   #calcNav{display:flex; align-items:center; gap:6px; padding:8px 14px 0; font-size:12px; color:var(--muted)}
   #calcNav .btn{background:transparent; color:var(--muted); font-size:15px; padding:4px 8px}
@@ -118,8 +109,6 @@
     #stage>.card{margin:0}
     #panelText{flex:1.3 1 0; display:flex; flex-direction:column}
     #panelText textarea{flex:1 1 auto; min-height:0}
-    #panelExcel{flex:1.3 1 0; display:flex; flex-direction:column}
-    #panelExcel #gridWrap{flex:1 1 auto; min-height:0; overflow-y:auto}
     #panelCalc{flex:0 0 360px; display:flex; flex-direction:column}
     #panelCalc #calcKeys{flex:1 1 auto; display:flex; flex-direction:column}
     #panelCalc #pad{flex:1 1 auto; grid-auto-rows:1fr}
@@ -144,7 +133,6 @@
   <div class="seg" id="segMode">
     <button class="btn" data-m="table">Tabel</button>
     <button class="btn" data-m="plain">Teks polos</button>
-    <button class="btn" data-m="excel">Excel</button>
     <button class="btn" data-m="calc">Kalkulator</button>
   </div>
 </div>
@@ -163,14 +151,6 @@
     <input type="file" id="ocrFile" accept="image/*" hidden>
   </div>
   <textarea id="txt" placeholder="Besi beton 8 mm 10 btg&#10;Semen 5 sak&#10;Gypsum 6 lbr"></textarea>
-</div>
-
-<div class="card" id="panelExcel" style="display:none">
-  <div class="cap">TABEL PESANAN — QTY BISA DIHITUNG, MIS. 5+3-2</div>
-  <div id="gridWrap"><table id="grid">
-    <thead><tr><th>Barang</th><th class="cq">Qty</th><th class="cu">Sat</th></tr></thead>
-    <tbody id="gridBody"></tbody>
-  </table></div>
 </div>
 
 <div class="card" id="panelCalc" style="display:none">
@@ -233,7 +213,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=10"></script>
+<script src="core.js?v=11"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -242,6 +222,8 @@ const statEl = $("stat");
 function setStat(msg, cls){ statEl.textContent = msg; statEl.className = cls || ""; }
 
 let mode = localStorage.cdp_mode || "table";
+if (mode === "excel") mode = "table";   // mode Excel sudah dihapus
+delete localStorage.cdp_grid;
 let numbered = localStorage.cdp_num !== "0";
 let headers = localStorage.cdp_head !== "0";
 let autoprint = localStorage.cdp_auto === "1";
@@ -263,68 +245,12 @@ function saveAll(){
   localStorage.cdp_zeroc = zeroc ? "1" : "0";
   localStorage.cdp_text = $("txt").value;
   localStorage.cdp_tapes = JSON.stringify(tapes);
-  localStorage.cdp_grid = JSON.stringify([...$("gridBody").rows]
-    .map(tr => gridInputs(tr).map(i => i.value))
-    .filter(r => r.some(v => v.trim())));
-}
-/* ================= mode excel: kisi Barang | Qty | Sat ================= */
-function gridInputs(tr){ return [...tr.querySelectorAll("input")]; }
-function addGridRow(){
-  const tr = document.createElement("tr");
-  for (const cls of ["gi","gq","gu"]){
-    const td = document.createElement("td"), inp = document.createElement("input");
-    inp.className = cls;
-    td.appendChild(inp); tr.appendChild(td);
-  }
-  $("gridBody").appendChild(tr);
-  gridInputs(tr).forEach((inp, k) => {
-    inp.addEventListener("input", onGridChange);
-    inp.addEventListener("keydown", e => {          // Enter: sel berikut / baris baru
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      if (k < 2){ gridInputs(tr)[k+1].focus(); return; }
-      let next = tr.nextElementSibling;
-      if (!next){ addGridRow(); next = tr.nextElementSibling; }
-      gridInputs(next)[0].focus();
-    });
-  });
-  return tr;
-}
-function onGridChange(){
-  const rows = [...$("gridBody").rows];
-  if (rows.length && gridInputs(rows[rows.length-1]).some(i => i.value.trim())) addGridRow();
-  updatePreview(); saveAll();
-}
-function gridData(){
-  const out = [];
-  for (const tr of $("gridBody").rows){
-    const [item, qty, unit] = gridInputs(tr).map(i => i.value.trim());
-    if (!(item || qty || unit)) continue;
-    if (qty) out.push([item, evalQty(qty), unit]);
-    else out.push([(item + " " + unit).trim(), null, null]);
-  }
-  return out;
-}
-function clearGrid(){ $("gridBody").innerHTML = ""; addGridRow(); }
-/* muat ulang isi kisi dari penyimpanan (bertahan seperti teks & pita) */
-function restoreGrid(){
-  $("gridBody").innerHTML = "";
-  let saved = [];
-  try { saved = JSON.parse(localStorage.cdp_grid || "[]"); } catch(e){}
-  for (const vals of saved){
-    if (!Array.isArray(vals)) continue;
-    const tr = addGridRow();
-    gridInputs(tr).forEach((inp, i) => { inp.value = String(vals[i] || ""); });
-  }
-  addGridRow();   // selalu ada baris kosong di akhir
 }
 /* ================= pratinjau & UI ================= */
 let lineMap = {};
 function currentDraft(){
   if (mode === "calc")
     return renderCalcTape(curTape(), numbered, COLS, new Date(), headers, zeroc)[0];
-  if (mode === "excel")
-    return renderTable(gridData(), numbered, COLS, new Date(), headers);
   return formatDraft($("txt").value, numbered, COLS, new Date(), mode==="plain", headers);
 }
 function updatePreview(){
@@ -486,8 +412,7 @@ function refreshCalcHead(){
   $("tapeLbl").textContent = `Pita ${active+1}/${tapes.length}${hist}`;
 }
 function applyMode(){
-  $("panelText").style.display = (mode === "calc" || mode === "excel") ? "none" : "";
-  $("panelExcel").style.display = mode === "excel" ? "" : "none";
+  $("panelText").style.display = mode === "calc" ? "none" : "";
   $("panelCalc").style.display = mode === "calc" ? "" : "none";
   $("capText").textContent = mode === "plain"
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
@@ -499,10 +424,6 @@ function applyMode(){
   // siap diketik: fokus ke kolom pertama sesuai mode (hanya desktop)
   if (isDesktop()){
     if (mode === "calc") (usedate ? $("inDate") : $("inAmt")).focus();
-    else if (mode === "excel"){
-      const first = $("gridBody").rows[0];
-      if (first) gridInputs(first)[0].focus();
-    }
   }
 }
 /* ================= kolom tanggal: tampilan (logika di core.js) ================= */
@@ -980,15 +901,12 @@ async function bleWrite(bytes){
 /* ================= tombol utama ================= */
 async function doPrint(skipConfirm){
   const hasContent = mode === "calc" ? curTape().some(ev => ev[0]==="e")
-    : mode === "excel" ? gridData().length > 0
     : $("txt").value.trim() !== "";
   if (!hasContent){ setStat("Tidak ada yang dicetak.","err"); return; }
   let summary;
   if (mode === "calc"){
     const [res, sum] = resolveTape(curTape());
     summary = `${res.filter(o=>o[0]==="e").length} baris, total ${fmtAmount(sum)}`;
-  } else if (mode === "excel"){
-    summary = `${gridData().length} baris`;
   } else {
     summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
   }
@@ -1011,11 +929,9 @@ async function doPrint(skipConfirm){
 }
 function doClear(){
   const hasContent = mode === "calc" ? curTape().some(ev => ev[0]!=="c")
-    : mode === "excel" ? gridData().length > 0
     : $("txt").value.trim() !== "";
   if (hasContent && !confirm("Hapus isi tampilan ini?")) return;
   if (mode === "calc"){ curTape().length = 0; curTape().push(["c"]); clearSel(); }
-  else if (mode === "excel") clearGrid();
   else $("txt").value = "";
   refreshCalcHead(); updatePreview(); saveAll(); setStat("Siap.");
 }
@@ -1167,7 +1083,7 @@ $("togDate").onclick = () => {
   }
 };
 /* init */
-initGrip(); applyUsedate(); refreshToggles(); restoreGrid(); applyMode(); initBridge();
+initGrip(); applyUsedate(); refreshToggles(); applyMode(); initBridge();
 </script>
 </body>
 </html>

@@ -224,29 +224,6 @@ function formatDraft(text, numbered, cols, now, plain, headers){
   }
   return renderTable(rows, numbered, cols, now, headers);
 }
-/* ---- mode Excel: kolom Qty boleh berisi hitungan sederhana ---- */
-/* "5+3-2" -> "6"; jika bukan ekspresi valid, kembalikan teks apa adanya.
-   Dihitung dengan tokenizer kecil supaya perilakunya persis eval() Python
-   (termasuk tanda berantai: "5++3" = 8, "5--3" = 8, "5+-3" = 2). */
-function evalQty(expr){
-  const raw = String(expr).trim();
-  const s = raw.replace(/,/g,"");                    // koma = pemisah ribuan
-  if (!s || !/^[0-9+\-. ]+$/.test(s)) return raw;
-  const toks = s.match(/\d+\.?\d*|\.\d+|[+\-]|\S/g) || [];
-  let total = 0, sign = 1, expectNum = true, seenNum = false;
-  for (const t of toks){
-    if (t === "+" || t === "-"){
-      if (t === "-") sign = -sign;
-      expectNum = true;
-    } else if (/^(\d+\.?\d*|\.\d+)$/.test(t)){
-      if (!expectNum && seenNum) return raw;          // dua angka tanpa tanda: "5 3"
-      total += sign * parseFloat(t);
-      sign = 1; expectNum = false; seenNum = true;
-    } else return raw;                                // token asing, mis. "." sendirian
-  }
-  if (expectNum || !seenNum) return raw;              // menggantung: "5+" / "+"
-  return Number.isInteger(total) ? String(total) : String(parseFloat(total.toFixed(6)));
-}
 /* ---- kalkulator ---- */
 function parseAmount(s){
   s = s.trim().replace(/,/g,"");
