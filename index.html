@@ -106,6 +106,8 @@
   /* caption kalkulator: judul + tombol toggle Tanggal (tampil di semua ukuran) */
   .calcCap{display:flex; align-items:center; gap:10px}
   #togDate{padding:5px 10px; font-size:11px}
+  /* tombol OCR di pojok kanan caption panel teks */
+  #btnOcr{margin-left:auto; padding:5px 10px; font-size:11px}
   /* ====== layar lebar (desktop): input kiri, pratinjau kanan ====== */
   @media (min-width:768px){
     body{padding-bottom:0}
@@ -155,7 +157,11 @@
 <div id="stage">
 
 <div class="card" id="panelText">
-  <div class="cap" id="capText">KETIK PESANAN — SATU BARANG PER BARIS</div>
+  <div class="cap calcCap">
+    <span id="capText">KETIK PESANAN — SATU BARANG PER BARIS</span>
+    <button class="btn tog" id="btnOcr" title="Baca teks dari foto/gambar (OCR)">&#128247; Foto</button>
+    <input type="file" id="ocrFile" accept="image/*" hidden>
+  </div>
   <textarea id="txt" placeholder="Besi beton 8 mm 10 btg&#10;Semen 5 sak&#10;Gypsum 6 lbr"></textarea>
 </div>
 
@@ -227,7 +233,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=9"></script>
+<script src="core.js?v=10"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -759,6 +765,65 @@ async function autoClip(){
     await printBridge(draft);
   } catch(e){ setStat("Gagal membaca clipboard: " + e.message, "err"); }
 }
+/* ================= OCR: foto/gambar -> teks ================= */
+/* Mesin OCR (Tesseract.js) dimuat dari internet saat PERTAMA dipakai;
+   data bahasa (ind+eng, belasan MB) diunduh sekali lalu disimpan browser,
+   jadi pemakaian berikutnya cepat. Hasil masuk ke kotak teks — dipakai
+   di mode Tabel maupun Teks polos. */
+let ocrWorker = null, ocrBusy = false;
+function loadScript(src){
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = res;
+    s.onerror = () => rej(new Error("tidak bisa memuat mesin OCR - periksa internet"));
+    document.head.appendChild(s);
+  });
+}
+async function getOcrWorker(){
+  if (ocrWorker) return ocrWorker;
+  if (!window.Tesseract){
+    setStat("Memuat mesin OCR...");
+    await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js");
+  }
+  setStat("Menyiapkan bahasa OCR (pertama kali agak lama)...");
+  ocrWorker = await Tesseract.createWorker(["ind","eng"], 1, {
+    logger: m => {
+      if (m.status === "recognizing text")
+        setStat("Membaca foto... " + Math.round(m.progress * 100) + "%");
+    }
+  });
+  return ocrWorker;
+}
+/* rapikan hasil OCR: satu barang per baris, buang baris sampah tanpa huruf/angka */
+function cleanOcrText(text){
+  return text.split("\n")
+    .map(l => l.replace(/\s+/g," ").trim())
+    .filter(l => /[A-Za-z0-9]/.test(l))
+    .join("\n");
+}
+async function runOcr(blob){
+  if (ocrBusy || !blob) return;
+  ocrBusy = true;
+  $("btnOcr").disabled = true;
+  try {
+    const worker = await getOcrWorker();
+    setStat("Membaca foto...");
+    const {data} = await worker.recognize(blob);
+    const text = cleanOcrText(data.text || "");
+    if (!text){ setStat("Tidak ada teks terbaca di foto itu.","err"); return; }
+    const el = $("txt");
+    el.value = el.value.trim() ? el.value.replace(/\s+$/,"") + "\n" + text : text;
+    updatePreview(); saveAll();
+    setStat("OCR selesai - " + text.split("\n").length + " baris. Periksa hasilnya.","ok");
+  } catch(e){
+    ocrWorker = null;   // worker bisa rusak - buat baru pada percobaan berikutnya
+    setStat("OCR gagal: " + ((e && e.message) || "periksa koneksi internet"), "err");
+  } finally {
+    ocrBusy = false;
+    $("btnOcr").disabled = false;
+  }
+}
 /* ================= Bluetooth LE (ESC/POS) ================= */
 /* Daftar layanan BLE printer thermal yang umum - halaman hanya boleh
    mengakses layanan yang disebut di sini. */
@@ -962,14 +1027,36 @@ $("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); 
 $("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
   setStat(autoprint ? "Auto-cetak aktif: TOTAL langsung mencetak." : "Auto-cetak mati."); };
 $("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
-/* tempelan sel Excel (ber-tab) di mode Tabel -> otomatis pindah ke Teks polos,
-   supaya kolom & baris kosongnya tercetak persis seperti di Excel */
+/* tempelan di kotak teks:
+   - gambar (mis. tangkapan layar WhatsApp) -> langsung OCR
+   - sel Excel (ber-tab) di mode Tabel -> otomatis pindah ke Teks polos,
+     supaya kolom & baris kosongnya tercetak persis seperti di Excel */
 $("txt").addEventListener("paste", e => {
-  const t = (e.clipboardData || window.clipboardData).getData("text");
+  const cb = e.clipboardData || window.clipboardData;
+  for (const it of cb.items || []){
+    if (it.type && it.type.startsWith("image/")){
+      e.preventDefault();
+      runOcr(it.getAsFile());
+      return;
+    }
+  }
+  const t = cb.getData("text");
   if (t && t.includes("\t") && mode === "table"){
     mode = "plain"; saveAll(); applyMode();
     setStat("Tempelan Excel terdeteksi - pindah ke Teks polos agar kolom sejajar.");
   }
+});
+/* seret gambar ke kotak teks (PC) -> OCR */
+$("txt").addEventListener("dragover", e => e.preventDefault());
+$("txt").addEventListener("drop", e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && f.type.startsWith("image/")){ e.preventDefault(); runOcr(f); }
+});
+$("btnOcr").onclick = () => $("ocrFile").click();
+$("ocrFile").addEventListener("change", () => {
+  const f = $("ocrFile").files[0];
+  $("ocrFile").value = "";   // supaya foto yang sama bisa dipilih ulang
+  if (f) runOcr(f);
 });
 $("btnBT").onclick = connectBT;
 $("btnPrint").onclick = () => doPrint(false);
