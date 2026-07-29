@@ -214,7 +214,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=14"></script>
+<script src="core.js?v=15"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -425,10 +425,10 @@ function applyMode(){
   if (mode === "calc") keyNew(true);   // masuk mode kalkulator -> mulai pita baru
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
-  // siap diketik: fokus ke kolom pertama sesuai mode (hanya desktop)
-  if (isDesktop()){
-    if (mode === "calc") (usedate ? $("inDate") : $("inAmt")).focus();
-  }
+  // siap diketik: fokus ke kolom pertama baris (Tanggal bila aktif), di semua
+  // ukuran layar. Di layar sempit kolom dibuat read-only, jadi papan ketik HP
+  // tetap tidak muncul — sama seperti fokus yang dipasang tiap baris disimpan.
+  if (mode === "calc") focusEntry();
 }
 /* ================= kolom tanggal: tampilan (logika di core.js) ================= */
 function setDate(raw){
@@ -1037,7 +1037,9 @@ $("btnCancelEdit").onclick = () => { clearSel(); updatePreview(); setStat("Edit 
 $("inAmt").addEventListener("input", liveComma);
 $("preview").addEventListener("click", e => {
   const span = e.target.closest(".row");
-  if (span && mode === "calc") selectRow(parseInt(span.dataset.i));
+  // mengetuk baris = mengedit nominalnya; tanpa ini tak ada kolom yang difokus
+  // dan ketikan berikutnya bisa masuk ke kolom yang salah
+  if (span && mode === "calc"){ selectRow(parseInt(span.dataset.i)); focusAmt(); }
 });
 // jangan curi fokus dari kolom isian saat menekan tombol numpad
 $("pad").addEventListener("mousedown", e => e.preventDefault());
@@ -1065,6 +1067,9 @@ document.addEventListener("keydown", e => {
   const el = $("inAmt"), ae = document.activeElement;
   // biarkan kolom Tgl (atau input lain) menangani ketikannya sendiri
   if (ae && ae !== el && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
+  // tak ada kolom yang difokus (mis. habis mengetuk baris pita): ketikan ikut
+  // kolom yang sedang aktif, sama seperti tombol numpad — bukan selalu Nominal
+  if (usedate && activeField === "date"){ focusDate(); dateKey(e); return; }
   const k = e.key;
   // Shift+Enter: lompat dari Nominal kembali ke Tanggal
   if (k === "Enter" && e.shiftKey){ if (usedate) focusDate(); e.preventDefault(); return; }
@@ -1096,7 +1101,9 @@ $("inDate").addEventListener("blur", () => setDate($("inDate").dataset.raw));
 $("inDate").addEventListener("input", () => {
   const el=$("inDate"); el.dataset.raw = el.value.replace(/\D/g,"").slice(0,4); el.value = el.dataset.raw;
 });
-$("inDate").addEventListener("keydown", e => {
+/* satu tempat aturan tombol kolom Tanggal: dipakai kolomnya sendiri, dan
+   dipakai ulang oleh keydown dokumen saat tak ada kolom yang difokus */
+function dateKey(e){
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const el = $("inDate"), k = e.key;
   /* angka selalu lewat padDateDigit, sama seperti tombol numpad. Kolom ini
@@ -1121,7 +1128,8 @@ $("inDate").addEventListener("keydown", e => {
     e.preventDefault();
   }
   // ArrowLeft di ujung kiri: kolom paling kiri, biarkan caret bergerak normal
-});
+}
+$("inDate").addEventListener("keydown", dateKey);
 $("togDate").onclick = () => {
   usedate = !usedate; saveAll(); applyUsedate();
   if (mode === "calc"){
