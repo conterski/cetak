@@ -214,7 +214,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=13"></script>
+<script src="core.js?v=14"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -1099,6 +1099,11 @@ $("inDate").addEventListener("input", () => {
 $("inDate").addEventListener("keydown", e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const el = $("inDate"), k = e.key;
+  /* angka selalu lewat padDateDigit, sama seperti tombol numpad. Kolom ini
+     dibuat read-only di layar sempit (<768px) supaya papan ketik HP tak
+     muncul — ketikan bawaan tidak akan masuk, jadi angkanya harus dimasukkan
+     sendiri. Kolom Nominal memang sudah bekerja begini di semua ukuran. */
+  if (/^[0-9]$/.test(k)){ padDateDigit(k); e.preventDefault(); return; }
   if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
     setDate(el.dataset.raw); focusAmt(); e.preventDefault();
   } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
