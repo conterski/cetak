@@ -21,25 +21,29 @@ try{
      nanti tema gelapnya bolong.
      --key* khusus tombol numpad: sengaja dibuat jelas beda dari --bg (latar
      panel numpad) supaya tiap tombol kelihatan timbul, tidak menyatu. */
+  /* Gaya numpad meniru papan ketik bawaan HP: tombol TANPA garis tepi,
+     permukaan terang (--key) di atas latar numpad yang sedikit lebih gelap
+     (--padbg), plus satu bayangan tipis di bawah. Kontrasnya dari selisih
+     nada permukaan, bukan dari garis - itulah yang membuatnya mulus. */
   :root, :root[data-theme="light"]{
-    --bg:#e2e8f2; --card:#fff; --border:#c3ccdb; --accent:#2159d8;
-    --accent-dark:#1a49b4; --text:#131b26; --muted:#5a6675;
-    --ok:#177245; --err:#b3261e; --seg:#dbe2ec; --on:#cfe0ff; --input:#f3f6fb;
-    --key:#fff; --key-border:#b3c0d4; --key-press:#d6e2f6;
-    --key-acc:#cfe0ff; --key-dan:#fbdcd9; --seg-act:#fff;
-    --paper:#fff; --paper-ink:#131b26;
-    --grip:#9fadc0; --shadow:rgba(19,27,38,.16); --shadow-soft:rgba(19,27,38,.10);
-    --scrim:rgba(19,27,38,.42);
+    --bg:#f2f4f8; --card:#fff; --border:#e3e7ee; --accent:#3565f0;
+    --accent-dark:#2a52cc; --text:#181c24; --muted:#68707f;
+    --ok:#178a4c; --err:#d43d32; --seg:#e7eaf0; --on:#dde7ff; --input:#f4f6fa;
+    --padbg:#dbe0e9; --key:#fff; --key-press:#d3d9e4;
+    --key-acc:#cfdfff; --key-dan:#ffd9d4; --seg-act:#fff;
+    --paper:#fff; --paper-ink:#181c24;
+    --grip:#b2bac8; --shadow:rgba(24,28,36,.14); --shadow-soft:rgba(24,28,36,.08);
+    --key-edge:rgba(24,28,36,.22); --scrim:rgba(24,28,36,.42);
   }
   :root[data-theme="dark"]{
-    --bg:#11161d; --card:#1b222c; --border:#2f3947; --accent:#78a6ff;
-    --accent-dark:#9dbcff; --text:#e7edf6; --muted:#9aa7b8;
-    --ok:#5fcf94; --err:#ff8a80; --seg:#252f3b; --on:#22375c; --input:#161d26;
-    --key:#2a3543; --key-border:#3a4757; --key-press:#3a4757;
-    --key-acc:#22375c; --key-dan:#48262a; --seg-act:#3b4859;
-    --paper:#e8ecf3; --paper-ink:#131b26;
-    --grip:#4a586a; --shadow:rgba(0,0,0,.45); --shadow-soft:rgba(0,0,0,.28);
-    --scrim:rgba(0,0,0,.58);
+    --bg:#14171d; --card:#1d2129; --border:#2b303b; --accent:#85a8ff;
+    --accent-dark:#a5bfff; --text:#e9ecf2; --muted:#99a2b1;
+    --ok:#4ecb8d; --err:#ff8078; --seg:#262b35; --on:#293d63; --input:#171a21;
+    --padbg:#101319; --key:#2c313c; --key-press:#3b414f;
+    --key-acc:#2d4068; --key-dan:#4a2c2e; --seg-act:#363c48;
+    --paper:#eceff5; --paper-ink:#181c24;
+    --grip:#4c5566; --shadow:rgba(0,0,0,.5); --shadow-soft:rgba(0,0,0,.3);
+    --key-edge:rgba(0,0,0,.55); --scrim:rgba(0,0,0,.58);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   body{margin:0; background:var(--bg); color:var(--text);
@@ -89,8 +93,12 @@ try{
              font-weight:700; font-size:13px;
              flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
   .inrow{display:flex; gap:8px; padding:6px 14px}
+  /* color WAJIB ditulis: input tidak mewarisi warna teks, dan bawaan peramban
+     hitam - di tema gelap angkanya jadi tak terbaca */
   .inrow input{border:1px solid var(--border); border-radius:10px; background:var(--input);
+               color:var(--text); caret-color:var(--accent);
                font-family:ui-monospace,Menlo,monospace; outline:none; padding:10px}
+  .inrow input::placeholder{color:var(--muted); opacity:.7}
   #inDate{width:88px; font-size:15px; text-align:center; color:var(--text)}
   /* tanggal warisan baris sebelumnya: redup dulu, jadi normal setelah Enter */
   #inDate.carried{color:var(--muted)}
@@ -100,16 +108,14 @@ try{
   #editBar .btn{padding:6px 10px; font-size:12px}
   #btnDelRow{background:var(--key-dan); color:var(--err)}
   #btnCancelEdit{background:var(--card); color:var(--muted)}
-  #pad{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:8px 14px 14px}
-  /* tombol dibuat "timbul": permukaan --key + garis tepi + bayangan tipis,
-     jelas berbeda dari latar panel (--bg) */
-  #pad .btn{padding:14px 0; font-size:18px; font-weight:600;
+  #pad{display:grid; grid-template-columns:repeat(4,1fr); gap:7px; padding:8px 14px 14px}
+  /* tombol gaya papan ketik bawaan: tanpa garis tepi, hanya permukaan terang
+     + satu bayangan rambut di bawah (--key-edge). Ditekan = permukaan turun
+     senada latar, bayangan hilang - terasa "masuk". */
+  #pad .btn{padding:14px 0; font-size:18px; font-weight:600; border-radius:9px;
             background:var(--key); color:var(--text);
-            border:1px solid var(--key-border);
-            box-shadow:0 1px 2px var(--shadow-soft)}
-  /* tombol aksi & bahaya tetap memakai garis tepi yang sama, supaya
-     batasnya sejelas tombol angka */
-  #pad .btn.acc{background:var(--key-acc); color:var(--accent)}
+            box-shadow:0 1px 0 var(--key-edge)}
+  #pad .btn.acc{background:var(--key-acc); color:var(--accent-dark)}
   #pad .btn.dan{background:var(--key-dan); color:var(--err)}
   #pad .btn:active{background:var(--key-press); box-shadow:none; transform:translateY(1px)}
   /* ====== pratinjau: digambar sebagai KERTAS ======
@@ -135,7 +141,9 @@ try{
   /* tinggi diatur JS (layoutCalc); min-height:0 supaya tak menabrak numpad */
   #previewCard.calc #preview{overflow-y:auto; margin:6px auto 2px; min-height:0}
   /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
-  #calcKeys{background:var(--bg)}
+  /* latar numpad sedikit lebih gelap dari halaman: tombol putih "mengambang"
+     di atasnya tanpa perlu garis tepi */
+  #calcKeys{background:var(--padbg)}
   body.calc #calcKeys{border-top:1px solid var(--border);
     padding:0 0 2px; box-shadow:0 -6px 14px var(--shadow-soft);
     display:flex; flex-direction:column}
@@ -347,7 +355,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=21"></script>
+<script src="core.js?v=22"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
