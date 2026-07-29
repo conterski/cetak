@@ -85,6 +85,9 @@
   body.calc #keysGrip::before{content:""; position:absolute; left:50%; top:7px;
     transform:translateX(-50%); width:44px; height:5px; border-radius:3px; background:#c3c8d0}
   body.calc #keysGrip:active::before{background:var(--accent)}
+  /* pemisah kolom (layar lebar / tablet mendatar): geser untuk mengatur lebar
+     numpad — pratinjau otomatis mengisi sisa ruang. Hanya mode kalkulator. */
+  #colGrip{display:none}
   .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
         border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
         padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
@@ -118,6 +121,15 @@
     #btlog{display:none}
     /* di desktop numpad TIDAK menempel ke bawah layar */
     body.calc #calcKeys{border:0; box-shadow:none}
+    /* tukar sisi: panel isian ke kanan, pratinjau ke kiri */
+    #stage.rev{flex-direction:row-reverse}
+    /* pegangan pemisah kolom (dinyalakan JS lewat kelas .on) */
+    #colGrip.on{display:block; position:relative; flex:0 0 14px; align-self:stretch;
+      touch-action:none; cursor:col-resize}
+    #colGrip.on::before{content:""; position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%); width:5px; height:44px; border-radius:3px;
+      background:#c3c8d0}
+    #colGrip.on:active::before{background:var(--accent)}
   }
 </style>
 </head>
@@ -140,6 +152,8 @@
   <button class="btn tog" id="togNum">Nomor urut</button>
   <button class="btn tog" id="togHead">Tanggal &amp; garis</button>
   <button class="btn tog" id="togAuto" style="display:none">Auto-cetak</button>
+  <button class="btn tog" id="togSwap" style="display:none"
+          title="Tukar posisi panel isian &amp; pratinjau">&#8646; Tukar sisi</button>
 </div>
 
 <div id="stage">
@@ -195,6 +209,8 @@
   </div>
 </div>
 
+<div id="colGrip" title="Geser untuk mengatur lebar numpad (ketuk dua kali: otomatis)"></div>
+
 <div class="card" id="previewCard">
   <div class="cap">PRATINJAU</div>
   <pre id="preview"></pre>
@@ -214,7 +230,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=15"></script>
+<script src="core.js?v=16"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -285,6 +301,11 @@ function updatePreview(){
 /* ====== layout responsif ====== */
 const mqDesktop = window.matchMedia("(min-width:768px)");
 const isDesktop = () => mqDesktop.matches;
+/* Lebar layar menentukan TATA LETAK; jenis penunjuk menentukan apakah papan
+   ketik bawaan boleh muncul. Dipisah supaya tablet mendatar (lebar, tapi
+   sentuh) tetap memakai numpad, dan jendela sempit di PC tetap bisa diketik. */
+const mqTouch = window.matchMedia("(pointer: coarse)");
+const isTouch = () => mqTouch.matches;
 
 /* desktop: tinggi panggung mengisi ruang sampai bilah CETAK, agar
    panel kiri & pratinjau kanan sama tinggi & sejajar */
@@ -363,6 +384,65 @@ function initGrip(){
     setStat("Tinggi numpad otomatis.");
   });
 }
+/* ====== layar lebar / tablet mendatar: lebar kolom numpad bisa diseret ======
+   Pratinjau memakai flex:1, jadi sisa ruang otomatis jadi miliknya: numpad
+   melebar -> pratinjau menyempit, dan sebaliknya. calcW = 0 berarti otomatis. */
+const MIN_CALC_W = 280, MIN_PREV_W = 260, AUTO_CALC_W = 360;
+let calcW = parseInt(localStorage.cdp_calcw || "0", 10) || 0;
+let swapped = localStorage.cdp_swap === "1";
+
+function layoutStage(){
+  const panel = $("panelCalc"), grip = $("colGrip");
+  const on = isDesktop() && mode === "calc";
+  grip.classList.toggle("on", on);
+  if (!on){ panel.style.flex = ""; return; }
+  // batas: numpad tetap layak dipakai, pratinjau tetap muat 31 karakter
+  const stageW = $("stage").clientWidth;
+  const spacer = 14 * 2 + grip.offsetWidth;      // dua jarak antarkolom + pegangan
+  const maxW = Math.max(MIN_CALC_W, stageW - spacer - MIN_PREV_W);
+  const w = Math.max(MIN_CALC_W, Math.min(calcW || AUTO_CALC_W, maxW));
+  panel.style.flex = "0 0 " + w + "px";
+  return w;
+}
+/* pegangan pemisah: seret kiri/kanan. Saat sisi ditukar, arah seret ikut
+   terbalik supaya tetap terasa "tarik pemisahnya", bukan "tarik ke kanan". */
+function initColGrip(){
+  const grip = $("colGrip");
+  let startX = 0, startW = 0, dragging = false;
+  grip.addEventListener("pointerdown", e => {
+    if (!(isDesktop() && mode === "calc")) return;
+    dragging = true; startX = e.clientX;
+    startW = $("panelCalc").getBoundingClientRect().width;
+    try { grip.setPointerCapture(e.pointerId); } catch(_e){}
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    calcW = Math.round(startW + (swapped ? -dx : dx));
+    layoutStage();
+    e.preventDefault();
+  });
+  const end = e => {
+    if (!dragging) return;
+    dragging = false;
+    try { grip.releasePointerCapture(e.pointerId); } catch(_e){}
+    calcW = Math.round($("panelCalc").getBoundingClientRect().width);  // simpan hasil yang sudah dibatasi
+    localStorage.cdp_calcw = String(calcW);
+  };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+  grip.addEventListener("dblclick", () => {
+    calcW = 0; delete localStorage.cdp_calcw; layoutStage();
+    setStat("Lebar numpad otomatis.");
+  });
+}
+/* tukar sisi kiri/kanan (hanya berarti pada tata letak dua kolom) */
+function applySwap(){
+  $("stage").classList.toggle("rev", swapped);   // aturan CSS-nya hanya >=768px
+  $("togSwap").classList.toggle("act", swapped);
+  $("togSwap").style.display = isDesktop() ? "" : "none";
+}
 /* letak kartu pratinjau: HP+kalkulator -> di atas numpad; selain itu -> kolom kanan */
 function placePreview(){
   const pc = $("previewCard");
@@ -374,10 +454,13 @@ function placePreview(){
     $("stage").appendChild(pc);
   }
 }
-/* HP: kolom isian dibuat read-only supaya papan ketik bawaan TIDAK muncul —
-   semua angka masuk lewat numpad bawaan. Desktop: tetap bisa diketik. */
+/* Layar sentuh (HP & tablet, termasuk iPad mendatar yang layarnya lebar):
+   kolom isian dibuat read-only supaya papan ketik bawaan TIDAK muncul — semua
+   angka masuk lewat numpad. Perangkat ber-mouse: tetap bisa diketik.
+   Papan ketik fisik tetap jalan di kedua keadaan: angka Nominal & Tanggal
+   dimasukkan lewat JS (lihat keydown dokumen & dateKey), bukan ketikan bawaan. */
 function applyNativeKeyboard(){
-  const ro = !isDesktop();
+  const ro = isTouch();
   const amt = $("inAmt"), dte = $("inDate");
   amt.readOnly = ro; dte.readOnly = ro;
   amt.inputMode = ro ? "none" : "decimal";
@@ -387,13 +470,18 @@ function relayout(){
   document.body.classList.toggle("calc", mode === "calc" && !isDesktop());
   applyNativeKeyboard();
   placePreview();
+  applySwap();
+  layoutStage();
   layoutDesktop();
   updatePreview();
   layoutCalc();
-  requestAnimationFrame(() => { layoutDesktop(); layoutCalc(); });
+  requestAnimationFrame(() => { layoutDesktop(); layoutCalc(); layoutStage(); });
 }
 mqDesktop.addEventListener("change", relayout);
-const onViewportChange = () => { layoutDesktop(); if (mode === "calc") layoutCalc(); };
+mqTouch.addEventListener("change", relayout);   // mis. mouse dicabut/dipasang
+const onViewportChange = () => {
+  layoutStage(); layoutDesktop(); if (mode === "calc") layoutCalc();
+};
 window.addEventListener("resize", onViewportChange);
 window.addEventListener("orientationchange", onViewportChange);
 // bilah URL HP muncul/hilang -> tinggi layar berubah tanpa event "resize"
@@ -983,6 +1071,12 @@ document.querySelectorAll("#segMode .btn").forEach(b =>
   b.onclick = () => { mode = b.dataset.m; saveAll(); applyMode(); });
 $("togNum").onclick = () => { numbered = !numbered; saveAll(); refreshToggles(); updatePreview(); };
 $("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); updatePreview(); };
+$("togSwap").onclick = () => {
+  swapped = !swapped; localStorage.cdp_swap = swapped ? "1" : "0";
+  applySwap(); layoutStage();
+  setStat(swapped ? "Pratinjau di kiri, panel isian di kanan."
+                  : "Panel isian di kiri, pratinjau di kanan.");
+};
 $("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
   setStat(autoprint ? "Auto-cetak aktif: TOTAL langsung mencetak." : "Auto-cetak mati."); };
 $("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
@@ -1104,28 +1198,34 @@ $("inDate").addEventListener("input", () => {
 /* satu tempat aturan tombol kolom Tanggal: dipakai kolomnya sendiri, dan
    dipakai ulang oleh keydown dokumen saat tak ada kolom yang difokus */
 function dateKey(e){
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;   // biarkan mis. Ctrl+P lewat
   const el = $("inDate"), k = e.key;
+  /* Tombol yang SUDAH ditangani di sini tidak boleh sampai ke keydown dokumen.
+     Beberapa di antaranya memindahkan fokus ke Nominal (angka ke-4, Enter,
+     panah kanan); tanpa stopPropagation, keydown dokumen melihat fokus yang
+     BARU dan mengira tombol itu ditujukan untuk Nominal — angka ke-4 tanggal
+     jadi ikut masuk ke Nominal, dan Enter langsung menyimpan baris. */
+  const stop = () => { e.preventDefault(); e.stopPropagation(); };
   /* angka selalu lewat padDateDigit, sama seperti tombol numpad. Kolom ini
-     dibuat read-only di layar sempit (<768px) supaya papan ketik HP tak
-     muncul — ketikan bawaan tidak akan masuk, jadi angkanya harus dimasukkan
-     sendiri. Kolom Nominal memang sudah bekerja begini di semua ukuran. */
-  if (/^[0-9]$/.test(k)){ padDateDigit(k); e.preventDefault(); return; }
+     dibuat read-only di layar sentuh supaya papan ketik HP/tablet tak muncul —
+     ketikan bawaan tidak akan masuk, jadi angkanya harus dimasukkan sendiri.
+     Kolom Nominal memang sudah bekerja begini di semua ukuran. */
+  if (/^[0-9]$/.test(k)){ padDateDigit(k); return stop(); }
   if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
-    setDate(el.dataset.raw); focusAmt(); e.preventDefault();
+    setDate(el.dataset.raw); focusAmt(); stop();
   } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
     if (el.selectionStart >= el.value.length){
-      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
+      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); stop();
     }
-  } else if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); }     // pilih baris sebelumnya
-  else if (k === "ArrowDown"){ selectNext(); e.preventDefault(); }     // pilih baris berikutnya
+  } else if (k === "ArrowUp"){ selectPrev(); stop(); }     // pilih baris sebelumnya
+  else if (k === "ArrowDown"){ selectNext(); stop(); }     // pilih baris berikutnya
   else if (k === "Backspace" || k === "Delete"){
     // kolom kosong -> hapus baris pita (mis. baris TOTAL), sama seperti di Nominal
-    backspaceDate(); e.preventDefault();
+    backspaceDate(); stop();
   } else if (k === "Escape"){
     if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
     else { $("inAmt").value = ""; setDate(""); }
-    e.preventDefault();
+    stop();
   }
   // ArrowLeft di ujung kiri: kolom paling kiri, biarkan caret bergerak normal
 }
@@ -1148,7 +1248,7 @@ $("togRibu").onclick = () => {
   }
 };
 /* init */
-initGrip(); applyUsedate(); refreshToggles(); applyMode(); initBridge();
+initGrip(); initColGrip(); applyUsedate(); refreshToggles(); applyMode(); initBridge();
 </script>
 </body>
 </html>
