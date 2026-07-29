@@ -266,7 +266,8 @@ function renderCalcTape(events, numbered, cols, now, headers, zeroc){
     if (op[0]==="e"){
       n++;
       let prefix = numbered ? (n+".").padEnd(noW) : "";
-      if (dateW) prefix += (prefix ? " " : "") + (op[3]||"").padEnd(dateW);
+      // tanggal rata kanan: angka terakhir sejajar di semua baris (9/7 vs 10/12)
+      if (dateW) prefix += (prefix ? " " : "") + (op[3]||"").padStart(dateW);
       const amt = fmtAmount(op[1]);
       lineMap[out.length] = i;
       out.push(prefix + amt.padStart(Math.max(cols - prefix.length - 2, amt.length)) + " " + op[2]);
