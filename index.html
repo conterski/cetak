@@ -4,11 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Cetak Draft Pesanan</title>
+<!-- tema dipasang SEBELUM halaman digambar, supaya tidak berkedip putih dulu
+     saat tema gelap dipakai. Pilihan tersimpan di cdp_theme; kalau belum
+     pernah dipilih, ikut pengaturan sistem. -->
+<script>
+try{
+  var t = localStorage.cdp_theme;
+  if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+}catch(e){ document.documentElement.dataset.theme = "light"; }
+</script>
 <style>
-  :root{
-    --bg:#f4f5f7; --card:#fff; --border:#e2e4e8; --accent:#2563eb;
-    --accent-dark:#1e50c8; --text:#1f2328; --muted:#6f7680;
-    --ok:#15803d; --err:#b91c1c; --seg:#e8eaee; --on:#dbe7ff; --input:#f7f8fa;
+  /* ================= warna =================
+     Dua tema, dipilih lewat data-theme di <html> (lihat tombol ☾/☀ di kanan
+     atas). Semua warna lewat variabel ini - jangan tulis kode warna langsung,
+     nanti tema gelapnya bolong.
+     --key* khusus tombol numpad: sengaja dibuat jelas beda dari --bg (latar
+     panel numpad) supaya tiap tombol kelihatan timbul, tidak menyatu. */
+  :root, :root[data-theme="light"]{
+    --bg:#e2e8f2; --card:#fff; --border:#c3ccdb; --accent:#2159d8;
+    --accent-dark:#1a49b4; --text:#131b26; --muted:#5a6675;
+    --ok:#177245; --err:#b3261e; --seg:#dbe2ec; --on:#cfe0ff; --input:#f3f6fb;
+    --key:#fff; --key-border:#b3c0d4; --key-press:#d6e2f6;
+    --key-acc:#cfe0ff; --key-dan:#fbdcd9; --seg-act:#fff;
+    --paper:#fff; --paper-ink:#131b26;
+    --grip:#9fadc0; --shadow:rgba(19,27,38,.16); --shadow-soft:rgba(19,27,38,.10);
+    --scrim:rgba(19,27,38,.42);
+  }
+  :root[data-theme="dark"]{
+    --bg:#11161d; --card:#1b222c; --border:#2f3947; --accent:#78a6ff;
+    --accent-dark:#9dbcff; --text:#e7edf6; --muted:#9aa7b8;
+    --ok:#5fcf94; --err:#ff8a80; --seg:#252f3b; --on:#22375c; --input:#161d26;
+    --key:#2a3543; --key-border:#3a4757; --key-press:#3a4757;
+    --key-acc:#22375c; --key-dan:#48262a; --seg-act:#3b4859;
+    --paper:#e8ecf3; --paper-ink:#131b26;
+    --grip:#4a586a; --shadow:rgba(0,0,0,.45); --shadow-soft:rgba(0,0,0,.28);
+    --scrim:rgba(0,0,0,.58);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   body{margin:0; background:var(--bg); color:var(--text);
@@ -18,6 +49,8 @@
   .btn{border:0; border-radius:10px; cursor:pointer; font-family:inherit}
   #btnBT{background:var(--seg); color:var(--muted); padding:9px 12px; font-size:13px; font-weight:600}
   #btnBT.on{background:var(--on); color:var(--accent)}
+  #btnTheme{background:var(--seg); color:var(--muted); font-size:15px; line-height:1;
+            padding:8px 11px}
   /* pilihan printer (hanya tampil bila jembatan cetak PC terdeteksi) */
   #selPrinter{display:none; background:var(--seg); color:var(--text); border:0;
               border-radius:10px; padding:9px 10px; font-size:13px; font-family:inherit;
@@ -25,7 +58,7 @@
   .rowbar{display:flex; gap:6px; padding:6px 14px; flex-wrap:wrap; align-items:center}
   .seg{display:flex; background:var(--seg); border-radius:10px; padding:3px}
   .seg .btn{background:transparent; color:var(--muted); padding:8px 14px; font-size:13px}
-  .seg .btn.act{background:var(--card); color:var(--accent); font-weight:700}
+  .seg .btn.act{background:var(--seg-act); color:var(--accent); font-weight:700}
   .tog{background:var(--seg); color:var(--muted); padding:8px 12px; font-size:13px}
   .tog.act{background:var(--on); color:var(--accent); font-weight:700}
   .card{background:var(--card); border:1px solid var(--border); border-radius:14px;
@@ -48,7 +81,7 @@
                    font-weight:700; line-height:1.1;
                    background:var(--on); color:var(--accent)}
   /* aksi merusak: beri warna peringatan di dalam modal */
-  #btnHist{color:var(--err); background:#fde8e8}
+  #btnHist{color:var(--err); background:var(--key-dan)}
   /* kolom numpad bisa sesempit 280px, jadi Total dijaga ringkas & tak melipat.
      Urutan mengalah bila ruang benar-benar habis: label pita dulu, baru ekor
      angka total — barisnya sendiri TIDAK pernah melebar keluar kartu. */
@@ -65,13 +98,20 @@
   #editBar{display:none; margin:0 14px; padding:8px 12px; background:var(--on); color:var(--accent);
            border-radius:10px; font-size:13px; font-weight:600; align-items:center; gap:8px}
   #editBar .btn{padding:6px 10px; font-size:12px}
-  #btnDelRow{background:#fde8e8; color:var(--err)}
+  #btnDelRow{background:var(--key-dan); color:var(--err)}
   #btnCancelEdit{background:var(--card); color:var(--muted)}
   #pad{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:8px 14px 14px}
-  #pad .btn{padding:14px 0; font-size:18px; font-weight:600; background:#f1f2f5; color:var(--text)}
-  #pad .btn.acc{background:var(--on); color:var(--accent)}
-  #pad .btn.dan{background:#fde8e8; color:var(--err)}
-  #pad .btn:active{filter:brightness(.92)}
+  /* tombol dibuat "timbul": permukaan --key + garis tepi + bayangan tipis,
+     jelas berbeda dari latar panel (--bg) */
+  #pad .btn{padding:14px 0; font-size:18px; font-weight:600;
+            background:var(--key); color:var(--text);
+            border:1px solid var(--key-border);
+            box-shadow:0 1px 2px var(--shadow-soft)}
+  /* tombol aksi & bahaya tetap memakai garis tepi yang sama, supaya
+     batasnya sejelas tombol angka */
+  #pad .btn.acc{background:var(--key-acc); color:var(--accent)}
+  #pad .btn.dan{background:var(--key-dan); color:var(--err)}
+  #pad .btn:active{background:var(--key-press); box-shadow:none; transform:translateY(1px)}
   /* ====== pratinjau: digambar sebagai KERTAS ======
      Lebarnya dikunci tepat selebar hasil cetak (31 karakter + padding), latar
      putih & bergaris tepi, lalu ditaruh di TENGAH panel lewat margin auto.
@@ -82,8 +122,9 @@
            line-height:1.5; overflow-x:auto; min-height:60px;
            width:calc(31ch + 2 * var(--kertas) + 2px);   /* +2px = garis tepi */
            max-width:100%; margin:8px auto; padding:10px var(--kertas);
-           background:#fff; border:1px solid var(--border); border-radius:3px;
-           box-shadow:0 1px 3px rgba(15,20,30,.10), 0 6px 16px rgba(15,20,30,.06)}
+           background:var(--paper); color:var(--paper-ink);
+           border:1px solid var(--border); border-radius:3px;
+           box-shadow:0 1px 3px var(--shadow), 0 6px 16px var(--shadow-soft)}
   /* kertas putih perlu latar yang lebih gelap sedikit supaya tepinya terbaca */
   #previewCard{background:var(--bg)}
   #preview .row{display:inline}
@@ -96,7 +137,7 @@
   /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
   #calcKeys{background:var(--bg)}
   body.calc #calcKeys{border-top:1px solid var(--border);
-    padding:0 0 2px; box-shadow:0 -6px 14px rgba(0,0,0,.06);
+    padding:0 0 2px; box-shadow:0 -6px 14px var(--shadow-soft);
     display:flex; flex-direction:column}
   /* numpad menyusut mengikuti tinggi yang diseret pengguna */
   body.calc #pad{flex:1 1 auto; min-height:0; grid-auto-rows:1fr; padding:6px 14px 8px}
@@ -106,7 +147,7 @@
   body.calc #keysGrip{display:block; position:relative; height:20px; flex:0 0 20px;
     touch-action:none; cursor:ns-resize}
   body.calc #keysGrip::before{content:""; position:absolute; left:50%; top:7px;
-    transform:translateX(-50%); width:44px; height:5px; border-radius:3px; background:#c3c8d0}
+    transform:translateX(-50%); width:44px; height:5px; border-radius:3px; background:var(--grip)}
   body.calc #keysGrip:active::before{background:var(--accent)}
   /* pemisah kolom (layar lebar / tablet mendatar): geser untuk mengatur lebar
      numpad — pratinjau otomatis mengisi sisa ruang. Hanya mode kalkulator. */
@@ -114,7 +155,7 @@
   .foot{position:fixed; left:0; right:0; bottom:0; background:var(--bg);
         border-top:1px solid var(--border); display:flex; gap:8px; align-items:center;
         padding:10px 14px calc(10px + env(safe-area-inset-bottom))}
-  #btnPrint{background:var(--accent); color:#fff; font-size:16px; font-weight:700; padding:14px 26px}
+  #btnPrint{background:var(--accent); color:var(--card); font-size:16px; font-weight:700; padding:14px 26px}
   #btnPrint:disabled{opacity:.5}
   #btnClear{background:var(--seg); color:var(--text); font-size:14px; padding:14px 16px}
   /* status melar mengisi ruang kiri (mendorong tombol ke kanan), teksnya
@@ -131,11 +172,11 @@
   #btnGear{font-size:16px; line-height:1; padding:8px 12px}
   #btnCalcGear{margin-left:auto; font-size:14px; line-height:1; padding:5px 9px}
   .modalBack{position:fixed; inset:0; z-index:50; padding:16px;
-             background:rgba(15,20,30,.38);
+             background:var(--scrim);
              display:flex; align-items:center; justify-content:center}
   .modalBack[hidden]{display:none}
   .modalPanel{margin:0; width:min(340px,100%); max-height:80vh; overflow:auto;
-              box-shadow:0 14px 44px rgba(0,0,0,.22)}
+              box-shadow:0 14px 44px var(--shadow)}
   .modalList{display:flex; flex-direction:column; gap:8px; padding:8px 14px 4px}
   .modalList .btn{width:100%; text-align:left; padding:12px 14px; font-size:14px}
   .modalClose{display:block; width:calc(100% - 28px); margin:8px 14px 14px;
@@ -166,7 +207,7 @@
       touch-action:none; cursor:col-resize}
     #colGrip.on::before{content:""; position:absolute; top:50%; left:50%;
       transform:translate(-50%,-50%); width:5px; height:44px; border-radius:3px;
-      background:#c3c8d0}
+      background:var(--grip)}
     #colGrip.on:active::before{background:var(--accent)}
   }
 </style>
@@ -176,6 +217,7 @@
 <div class="top">
   <h1>Cetak Draft Pesanan</h1>
   <select id="selPrinter" title="Pilih printer"></select>
+  <button class="btn" id="btnTheme" aria-label="Ganti tema terang/gelap"></button>
   <button class="btn" id="btnBT">&#9679; Hubungkan</button>
 </div>
 
@@ -219,6 +261,8 @@
               title="Angka yang diketik dikalikan 1000">&times;1000</button>
       <button class="btn tog" id="btnZeroC"
               title="Tampilkan baris 0 C di awal tiap pita">Baris 0 C</button>
+      <button class="btn tog" id="togHaptic"
+              title="Getar tiap tombol numpad ditekan; bila perangkat tak bisa getar, diganti bunyi klik">Getar / bunyi tombol</button>
       <!-- jarang dipakai & merusak (ada konfirmasi), jadi disimpan di sini
            supaya baris navigasi cukup untuk Pita/Baru/Total tanpa melipat -->
       <button class="btn" id="btnHist"
@@ -289,8 +333,8 @@
 </div><!-- /stage -->
 
 <details class="card" id="btlog" style="padding:0 0 8px">
-  <summary style="font-size:11px; font-weight:700; color:#6f7680; padding:10px 14px; cursor:pointer">LOG BLUETOOTH (untuk diagnosa)</summary>
-  <pre id="btlogtxt" style="font-family:ui-monospace,Menlo,monospace; font-size:10px; margin:0; padding:0 14px; white-space:pre-wrap; word-break:break-all; color:#6f7680"></pre>
+  <summary style="font-size:11px; font-weight:700; color:var(--muted); padding:10px 14px; cursor:pointer">LOG BLUETOOTH (untuk diagnosa)</summary>
+  <pre id="btlogtxt" style="font-family:ui-monospace,Menlo,monospace; font-size:10px; margin:0; padding:0 14px; white-space:pre-wrap; word-break:break-all; color:var(--muted)"></pre>
 </details>
 
 <!-- urutan sengaja: status dulu (melar mengisi ruang) supaya tombol terdorong
@@ -303,7 +347,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=20"></script>
+<script src="core.js?v=21"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -320,6 +364,7 @@ let autoprint = localStorage.cdp_auto === "1";
 let usedate = localStorage.cdp_usedate === "1";   // kolom tanggal per-baris (default mati)
 let zeroc = localStorage.cdp_zeroc !== "0";       // baris "0 C" di awal tiap pita (default nyala)
 let ribu = localStorage.cdp_ribu === "1";         // ×1000: nominal diketik dalam ribuan (default mati)
+let haptic = localStorage.cdp_haptic !== "0";     // getar/bunyi tiap tombol numpad (default nyala)
 let tapes = [[["c"]]], active = 0, sel = null;
 try {
   const t = JSON.parse(localStorage.cdp_tapes || "null");
@@ -335,6 +380,7 @@ function saveAll(){
   localStorage.cdp_usedate = usedate ? "1" : "0";
   localStorage.cdp_zeroc = zeroc ? "1" : "0";
   localStorage.cdp_ribu = ribu ? "1" : "0";
+  localStorage.cdp_haptic = haptic ? "1" : "0";
   localStorage.cdp_text = $("txt").value;
   localStorage.cdp_tapes = JSON.stringify(tapes);
 }
@@ -379,6 +425,19 @@ const isDesktop = () => mqDesktop.matches;
    sentuh) tetap memakai numpad, dan jendela sempit di PC tetap bisa diketik. */
 const mqTouch = window.matchMedia("(pointer: coarse)");
 const isTouch = () => mqTouch.matches;
+/* ---- tema terang/gelap ----
+   theme = "" berarti ikut pengaturan sistem; sekali tombol ditekan, pilihan
+   pengguna yang dipakai dan disimpan. Kelas warnanya ada di :root[data-theme]. */
+let theme = localStorage.cdp_theme || "";
+const mqDark = window.matchMedia("(prefers-color-scheme: dark)");
+const isDark = () => theme ? theme === "dark" : mqDark.matches;
+function applyTheme(){
+  document.documentElement.dataset.theme = isDark() ? "dark" : "light";
+  // ikonnya menunjukkan tema yang AKAN dipakai kalau ditekan
+  $("btnTheme").textContent = isDark() ? "☀" : "☾";
+  $("btnTheme").title = isDark() ? "Ganti ke tema terang" : "Ganti ke tema gelap";
+}
+mqDark.addEventListener("change", () => { if (!theme) applyTheme(); });
 
 /* desktop: tinggi panggung mengisi ruang sampai bilah CETAK, agar
    panel kiri & pratinjau kanan sama tinggi & sejajar */
@@ -567,6 +626,7 @@ function refreshToggles(){
   $("togAuto").classList.toggle("act", autoprint);
   $("btnZeroC").classList.toggle("act", zeroc);
   $("togRibu").classList.toggle("act", ribu);
+  $("togHaptic").classList.toggle("act", haptic);
   document.querySelectorAll("#segMode .btn").forEach(b =>
     b.classList.toggle("act", b.dataset.m === mode));
 }
@@ -649,9 +709,15 @@ function padDateDigit(d){
   }
 }
 /* ⌫ di kolom Tanggal: ada angka -> hapus 1 angka; kosong -> hapus baris
-   (baris yang sedang diedit, atau baris terakhir termasuk TOTAL/SUB) */
+   (baris yang sedang diedit, atau baris terakhir termasuk TOTAL/SUB).
+
+   Tanggal BAWAAN (yang redup) belum dianggap terisi: ia baru "ada" setelah
+   disetujui dengan Enter. Jadi ⌫ di atasnya tidak mengupas angkanya satu-satu,
+   melainkan langsung menghapus baris sebelumnya — persis seperti kolom kosong.
+   Menekan ⌫ berulang kali = membatalkan baris satu per satu. */
 function backspaceDate(){
   const el = $("inDate");
+  if (dateCarried){ deleteRowNow(); return; }
   setDateCarried(false);             // sudah disunting sendiri, bukan bawaan lagi
   const raw = el.dataset.raw || "";
   if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; return; }
@@ -1238,6 +1304,12 @@ $("ocrFile").addEventListener("change", () => {
   $("ocrFile").value = "";   // supaya foto yang sama bisa dipilih ulang
   if (f) runOcr(f);
 });
+$("btnTheme").onclick = () => {
+  theme = isDark() ? "light" : "dark";
+  localStorage.cdp_theme = theme;
+  applyTheme();
+  setStat(isDark() ? "Tema gelap." : "Tema terang.");
+};
 $("btnBT").onclick = connectBT;
 $("btnPrint").onclick = () => doPrint(false);
 $("btnClear").onclick = doClear;
@@ -1253,6 +1325,15 @@ $("btnZeroC").onclick = () => {
   zeroc = !zeroc; saveAll(); refreshToggles(); updatePreview();
   setStat(zeroc ? "Baris 0 C ditampilkan." : "Baris 0 C disembunyikan.");
 };
+$("togHaptic").onclick = () => {
+  haptic = !haptic; saveAll(); refreshToggles();
+  // dicoba langsung saat dinyalakan: sekalian contoh & sekalian membuka izin
+  // audio (peramban baru mengizinkan bunyi setelah ada tekanan tombol)
+  if (haptic) padFeedback();
+  setStat(haptic
+    ? (canVibrate() ? "Getar tombol aktif." : "Bunyi klik tombol aktif.")
+    : "Getar/bunyi tombol mati.");
+};
 $("btnDelRow").onclick = delRow;
 $("btnCancelEdit").onclick = () => { clearSel(); updatePreview(); setStat("Edit dibatalkan."); };
 $("inAmt").addEventListener("input", liveComma);
@@ -1262,12 +1343,47 @@ $("preview").addEventListener("click", e => {
   // dan ketikan berikutnya bisa masuk ke kolom yang salah
   if (span && mode === "calc"){ selectRow(parseInt(span.dataset.i)); focusAmt(); }
 });
+/* ---- umpan balik tombol numpad: getar, atau bunyi klik bila tak bisa getar ----
+   iPhone/iPad TIDAK punya navigator.vibrate, begitu juga PC, jadi di situ yang
+   terdengar adalah bunyi klik pendek. Android umumnya bisa getar.
+   Catatan: di iPhone bunyi ikut sakelar senyap - kalau HP disenyapkan, klik
+   tidak terdengar (tidak ada cara menghindarinya dari halaman web). */
+let audioCtx = null;
+function clickSound(){
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(1700, t);
+    // amplop sangat pendek -> terdengar seperti "tik", bukan nada
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.035);
+  } catch(e){ /* audio diblokir/tak didukung: diamkan saja */ }
+}
+function canVibrate(){
+  // hanya perangkat sentuh yang punya motor getar; di PC navigator.vibrate
+  // kadang ada tapi tidak melakukan apa-apa, jadi jangan diandalkan di sana
+  return isTouch() && typeof navigator.vibrate === "function";
+}
+function padFeedback(){
+  if (!haptic) return;
+  if (canVibrate() && navigator.vibrate(8)) return;
+  clickSound();
+}
 // jangan curi fokus dari kolom isian saat menekan tombol numpad
 $("pad").addEventListener("mousedown", e => e.preventDefault());
 $("pad").addEventListener("click", e => {
   const b = e.target.closest("[data-k]");
   if (!b) return;
-  if (navigator.vibrate) navigator.vibrate(8);  // getar halus tiap tekan
+  padFeedback();                                // getar, atau bunyi klik
+
   const k = b.dataset.k, el = $("inAmt");
   const onDate = usedate && activeField === "date";
   if (k === "C") { if (onDate){ setDate(""); setDateCarried(false); } else el.value = ""; }
@@ -1390,6 +1506,7 @@ $("togRibu").onclick = () => {
   }
 };
 /* init */
+applyTheme();
 initGrip(); initColGrip(); applyUsedate(); refreshToggles(); applyMode(); initBridge();
 </script>
 </body>
