@@ -35,18 +35,32 @@
   textarea{width:100%; border:0; outline:none; font:inherit; font-size:16px;
            padding:8px 14px 12px; min-height:170px; resize:vertical; background:transparent}
   /* kalkulator */
-  #calcNav{display:flex; align-items:center; gap:6px; padding:8px 14px 0; font-size:12px; color:var(--muted)}
-  #calcNav .btn{background:transparent; color:var(--muted); font-size:15px; padding:4px 8px}
-  #btnHist{margin-left:auto; font-size:11px; color:var(--muted); background:transparent}
-  #calcNav #btnZeroC, #calcNav #btnNew{font-size:11px; padding:5px 10px; border-radius:8px; margin-left:8px; font-weight:700}
-  #calcNav #btnZeroC{background:var(--seg); color:var(--muted)}
-  #calcNav #btnZeroC.act{background:var(--on); color:var(--accent)}
-  #calcNav #btnNew{background:var(--on); color:var(--accent)}
-  #calcTotal{padding:2px 14px; text-align:right; color:var(--accent); font-weight:700; font-size:15px}
+  /* satu baris: navigasi pita di kiri, Total di kanan. Semua dijaga agar
+     TIDAK melipat ke baris kedua (nowrap) supaya pratinjau kebagian ruang. */
+  #calcNav{display:flex; align-items:center; gap:5px; padding:6px 14px 2px;
+           font-size:11px; color:var(--muted); white-space:nowrap}
+  #calcNav .btn{background:transparent; color:var(--muted); font-size:13px;
+                padding:2px 5px; line-height:1}
+  /* kalau ruang benar-benar mepet (kolom numpad disempitkan + total sangat
+     besar), label pita yang mengalah lebih dulu — Total harus tetap terbaca */
+  #tapeLbl{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
+  #calcNav #btnNew{font-size:11px; padding:4px 8px; border-radius:8px;
+                   font-weight:700; line-height:1.1;
+                   background:var(--on); color:var(--accent)}
+  /* aksi merusak: beri warna peringatan di dalam modal */
+  #btnHist{color:var(--err); background:#fde8e8}
+  /* kolom numpad bisa sesempit 280px, jadi Total dijaga ringkas & tak melipat.
+     Urutan mengalah bila ruang benar-benar habis: label pita dulu, baru ekor
+     angka total — barisnya sendiri TIDAK pernah melebar keluar kartu. */
+  #calcTotal{margin-left:auto; padding-left:4px; color:var(--accent);
+             font-weight:700; font-size:13px;
+             flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis}
   .inrow{display:flex; gap:8px; padding:6px 14px}
   .inrow input{border:1px solid var(--border); border-radius:10px; background:var(--input);
                font-family:ui-monospace,Menlo,monospace; outline:none; padding:10px}
-  #inDate{width:88px; font-size:15px; text-align:center}
+  #inDate{width:88px; font-size:15px; text-align:center; color:var(--text)}
+  /* tanggal warisan baris sebelumnya: redup dulu, jadi normal setelah Enter */
+  #inDate.carried{color:var(--muted)}
   #inAmt{flex:1; font-size:22px; text-align:right; min-width:0}
   #editBar{display:none; margin:0 14px; padding:8px 12px; background:var(--on); color:var(--accent);
            border-radius:10px; font-size:13px; font-weight:600; align-items:center; gap:8px}
@@ -104,6 +118,19 @@
   #togDate{padding:5px 10px; font-size:11px}
   /* tombol OCR di pojok kanan caption panel teks */
   #btnOcr{margin-left:auto; padding:5px 10px; font-size:11px}
+  /* ====== pengaturan tampilan (modal di balik tombol gerigi) ====== */
+  #btnGear{font-size:16px; line-height:1; padding:8px 12px}
+  #btnCalcGear{margin-left:auto; font-size:14px; line-height:1; padding:5px 9px}
+  .modalBack{position:fixed; inset:0; z-index:50; padding:16px;
+             background:rgba(15,20,30,.38);
+             display:flex; align-items:center; justify-content:center}
+  .modalBack[hidden]{display:none}
+  .modalPanel{margin:0; width:min(340px,100%); max-height:80vh; overflow:auto;
+              box-shadow:0 14px 44px rgba(0,0,0,.22)}
+  .modalList{display:flex; flex-direction:column; gap:8px; padding:8px 14px 4px}
+  .modalList .btn{width:100%; text-align:left; padding:12px 14px; font-size:14px}
+  .modalClose{display:block; width:calc(100% - 28px); margin:8px 14px 14px;
+              background:var(--seg); color:var(--text); padding:11px 14px; font-size:14px}
   /* ====== layar lebar (desktop): input kiri, pratinjau kanan ====== */
   @media (min-width:768px){
     body{padding-bottom:0}
@@ -149,13 +176,47 @@
     <button class="btn" data-m="plain">Teks polos</button>
     <button class="btn" data-m="calc">Kalkulator</button>
   </div>
+  <button class="btn tog" id="btnGear" title="Pengaturan tampilan"
+          aria-haspopup="dialog" aria-expanded="false">&#9881;</button>
 </div>
-<div class="rowbar">
-  <button class="btn tog" id="togNum">Nomor urut</button>
-  <button class="btn tog" id="togHead">Tanggal &amp; garis</button>
-  <button class="btn tog" id="togAuto" style="display:none">Auto-cetak</button>
-  <button class="btn tog" id="togSwap" style="display:none"
-          title="Tukar posisi panel isian &amp; pratinjau">&#8646; Tukar sisi</button>
+
+<!-- pengaturan tampilan: tombol-tombol yang dulu berjajar di bawah baris mode.
+     Elemennya SAMA (id tidak berubah), hanya pindah tempat, jadi semua logika
+     yang memakainya (refreshToggles dll) tetap berjalan. -->
+<div id="setBack" class="modalBack" hidden>
+  <div class="card modalPanel" id="setPanel" role="dialog" aria-modal="true"
+       aria-label="Pengaturan tampilan">
+    <div class="cap">PENGATURAN TAMPILAN</div>
+    <div class="modalList">
+      <button class="btn tog" id="togNum">Nomor urut</button>
+      <button class="btn tog" id="togHead">Tanggal &amp; garis</button>
+      <button class="btn tog" id="togAuto" style="display:none">Auto-cetak</button>
+      <button class="btn tog" id="togSwap" style="display:none"
+              title="Tukar posisi panel isian &amp; pratinjau">&#8646; Tukar sisi</button>
+    </div>
+    <button class="btn modalClose" id="btnSetClose">Tutup</button>
+  </div>
+</div>
+
+<!-- pengaturan khusus kalkulator, dibuka dari gerigi di baris KALKULATOR PITA -->
+<div id="calcSetBack" class="modalBack" hidden>
+  <div class="card modalPanel" id="calcSetPanel" role="dialog" aria-modal="true"
+       aria-label="Pengaturan kalkulator">
+    <div class="cap">PENGATURAN KALKULATOR</div>
+    <div class="modalList">
+      <button class="btn tog" id="togDate"
+              title="Kolom tanggal d/m di tiap baris">Tanggal per baris</button>
+      <button class="btn tog" id="togRibu"
+              title="Angka yang diketik dikalikan 1000">&times;1000</button>
+      <button class="btn tog" id="btnZeroC"
+              title="Tampilkan baris 0 C di awal tiap pita">Baris 0 C</button>
+      <!-- jarang dipakai & merusak (ada konfirmasi), jadi disimpan di sini
+           supaya baris navigasi cukup untuk Pita/Baru/Total tanpa melipat -->
+      <button class="btn" id="btnHist"
+              title="Hapus SEMUA riwayat pita">Hapus riwayat pita</button>
+    </div>
+    <button class="btn modalClose" id="btnCalcSetClose">Tutup</button>
+  </div>
 </div>
 
 <div id="stage">
@@ -172,18 +233,16 @@
 <div class="card" id="panelCalc" style="display:none">
   <div class="cap calcCap">
     <span>KALKULATOR PITA</span>
-    <button class="btn tog" id="togDate">Tanggal</button>
-    <button class="btn tog" id="togRibu" title="Angka yang diketik dikalikan 1000">&times;1000</button>
+    <button class="btn tog" id="btnCalcGear" title="Pengaturan kalkulator"
+            aria-haspopup="dialog" aria-expanded="false">&#9881;</button>
   </div>
   <div id="calcNav">
     <button class="btn" id="btnPrev">&#9664;</button>
     <span id="tapeLbl">Pita 1/1</span>
     <button class="btn" id="btnNext">&#9654;</button>
-    <button class="btn" id="btnHist">Hapus riwayat</button>
-    <button class="btn tog" id="btnZeroC" title="Tampilkan baris 0 C di awal tiap pita">0 C</button>
     <button class="btn" id="btnNew" title="Buat pita baru">Baru</button>
+    <div id="calcTotal">Total: 0 (0 nota)</div>
   </div>
-  <div id="calcTotal">Total: 0 (0 item)</div>
   <div id="calcKeys">
   <div id="keysGrip" title="Geser untuk mengatur tinggi numpad (ketuk dua kali: otomatis)"></div>
   <div class="inrow" id="calcInRow">
@@ -235,7 +294,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=18"></script>
+<script src="core.js?v=19"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -505,8 +564,11 @@ function refreshToggles(){
 function refreshCalcHead(){
   const [, sum, count] = resolveTape(curTape());
   $("calcTotal").textContent = `Total: ${fmtAmount(sum)} (${count} nota)`;
-  const hist = active === tapes.length-1 ? "" : " (riwayat)";
+  // penanda riwayat dibuat pendek (•) supaya baris navigasi tak melipat;
+  // keterangan lengkapnya ada di tooltip
+  const hist = active === tapes.length-1 ? "" : " •";
   $("tapeLbl").textContent = `Pita ${active+1}/${tapes.length}${hist}`;
+  $("tapeLbl").title = hist ? "Pita riwayat (bukan yang terbaru)" : "Pita terbaru";
 }
 function applyMode(){
   $("panelText").style.display = mode === "calc" ? "none" : "";
@@ -541,7 +603,14 @@ function applyUsedate(){
      jadi tidak perlu ⌫ empat kali. */
 let lastDate = "";        // DDMM baris terakhir yang tersimpan
 let dateCarried = false;  // isi kolom Tanggal berasal dari baris sebelumnya
-function carryDate(){ setDate(lastDate); dateCarried = !!lastDate; }
+/* selama masih bawaan, tulisannya ditampilkan redup (seperti bayangan) supaya
+   jelas itu warisan baris sebelumnya dan belum disetujui. Enter = setuju ->
+   tulisan kembali normal; ketik angka = ganti -> juga normal. */
+function setDateCarried(on){
+  dateCarried = !!on;
+  $("inDate").classList.toggle("carried", dateCarried);
+}
+function carryDate(){ setDate(lastDate); setDateCarried(!!lastDate); }
 function moveCaretEnd(el){ const n = el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} }
 function moveCaretStart(el){ try{ el.setSelectionRange(0,0); }catch(e){} }
 /* kolom mana yang sedang menerima angka dari numpad ("amt" | "date") */
@@ -558,7 +627,7 @@ function focusAmt(){ activeField = "amt"; $("inAmt").focus(); }
 function padDateDigit(d){
   const el = $("inDate");
   // tanggal bawaan dari baris sebelumnya: angka pertama memulai tanggal baru
-  if (dateCarried){ dateCarried = false; el.dataset.raw = ""; el.value = ""; }
+  if (dateCarried){ setDateCarried(false); el.dataset.raw = ""; el.value = ""; }
   let raw = el.dataset.raw || "";
   if (raw.length >= 4) return;             // sudah penuh: pakai ⌫ untuk mengubah
   raw += d;
@@ -574,7 +643,7 @@ function padDateDigit(d){
    (baris yang sedang diedit, atau baris terakhir termasuk TOTAL/SUB) */
 function backspaceDate(){
   const el = $("inDate");
-  dateCarried = false;               // sudah disunting sendiri, bukan bawaan lagi
+  setDateCarried(false);             // sudah disunting sendiri, bukan bawaan lagi
   const raw = el.dataset.raw || "";
   if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; return; }
   deleteRowNow();   // Tanggal = kolom paling kiri -> kosong + ⌫ = hapus baris
@@ -595,7 +664,7 @@ function selectRow(i){
   const ev = curTape()[i];
   $("inAmt").value = amtToInput(ev[1]);
   setDate(dateToRaw(ev[3] || ""));
-  dateCarried = false;   // tanggal milik baris yang diedit, bukan bawaan
+  setDateCarried(false);   // tanggal milik baris yang diedit, bukan bawaan
   let no = 0;
   for (let j = 0; j <= i; j++){
     const e2 = curTape()[j];
@@ -1094,6 +1163,32 @@ document.querySelectorAll("#segMode .btn").forEach(b =>
   b.onclick = () => { mode = b.dataset.m; saveAll(); applyMode(); });
 $("togNum").onclick = () => { numbered = !numbered; saveAll(); refreshToggles(); updatePreview(); };
 $("togHead").onclick = () => { headers = !headers; saveAll(); refreshToggles(); updatePreview(); };
+/* ---- modal pengaturan (dua buah: tampilan & kalkulator) ---- */
+let setOpen = false;      // ada salah satu modal yang terbuka?
+let openedBy = null;      // tombol gerigi yang membukanya
+function openModal(backId, gearId){
+  if (setOpen) closeSettings();
+  setOpen = true; openedBy = gearId;
+  $(backId).hidden = false;
+  $(gearId).setAttribute("aria-expanded", "true");
+  $(backId).querySelector(".modalClose").focus();
+}
+function closeSettings(){
+  if (!setOpen) return;
+  setOpen = false;
+  document.querySelectorAll(".modalBack").forEach(b => b.hidden = true);
+  $(openedBy).setAttribute("aria-expanded", "false");
+  const gear = openedBy; openedBy = null;
+  // kembalikan kursor ke tempat kerja: kolom isian kalkulator, atau tombol gerigi
+  if (mode === "calc") focusEntry(); else $(gear).focus();
+}
+function openSettings(){ openModal("setBack", "btnGear"); }
+$("btnGear").onclick = openSettings;
+$("btnCalcGear").onclick = () => openModal("calcSetBack", "btnCalcGear");
+document.querySelectorAll(".modalClose").forEach(b => b.onclick = closeSettings);
+// klik di luar panel (latar gelap) menutup; klik di dalam panel tidak
+document.querySelectorAll(".modalBack").forEach(back =>
+  back.addEventListener("click", e => { if (e.target === back) closeSettings(); }));
 $("togSwap").onclick = () => {
   swapped = !swapped; localStorage.cdp_swap = swapped ? "1" : "0";
   applySwap(); layoutStage();
@@ -1166,7 +1261,7 @@ $("pad").addEventListener("click", e => {
   if (navigator.vibrate) navigator.vibrate(8);  // getar halus tiap tekan
   const k = b.dataset.k, el = $("inAmt");
   const onDate = usedate && activeField === "date";
-  if (k === "C") { if (onDate) setDate(""); else el.value = ""; }
+  if (k === "C") { if (onDate){ setDate(""); setDateCarried(false); } else el.value = ""; }
   else if (k === "BS") { if (onDate) backspaceDate(); else backspace(); }
   else if (k === "SUB") keySub();
   else if (k === "TOT") keyTot();
@@ -1211,6 +1306,11 @@ function amtKey(e){
    dulu itu membuat angka ke-4 tanggal ikut masuk ke Nominal.
    Karena hanya ada satu penangan, tidak ada lagi urusan urutan/propagasi. */
 document.addEventListener("keydown", e => {
+  // modal pengaturan terbuka: Esc menutup, tombol lain tidak masuk kalkulator
+  if (setOpen){
+    if (e.key === "Escape"){ closeSettings(); e.preventDefault(); }
+    return;
+  }
   if (mode !== "calc") return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;   // mis. Ctrl+P: biarkan lewat
   const amt = $("inAmt"), dte = $("inDate"), ae = document.activeElement;
@@ -1232,7 +1332,7 @@ $("inDate").addEventListener("focus", () => { activeField = "date"; const el=$("
 $("inDate").addEventListener("blur", () => setDate($("inDate").dataset.raw));
 $("inDate").addEventListener("input", () => {
   const el=$("inDate"); el.dataset.raw = el.value.replace(/\D/g,"").slice(0,4); el.value = el.dataset.raw;
-  dateCarried = false;   // disunting sendiri (tempel/ketik bawaan), bukan bawaan
+  setDateCarried(false);   // disunting sendiri (tempel/ketik bawaan), bukan bawaan
 });
 /* satu tempat aturan tombol kolom Tanggal: dipakai kolomnya sendiri, dan
    dipakai ulang oleh keydown dokumen saat tak ada kolom yang difokus */
@@ -1244,10 +1344,12 @@ function dateKey(e){
      Kolom Nominal memang sudah bekerja begini di semua ukuran. */
   if (/^[0-9]$/.test(k)){ padDateDigit(k); e.preventDefault(); return; }
   if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
-    setDate(el.dataset.raw); focusAmt(); e.preventDefault();
+    // Enter = menyetujui tanggal (termasuk yang terbawa) -> tulisan normal lagi
+    setDate(el.dataset.raw); setDateCarried(false); focusAmt(); e.preventDefault();
   } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
     if (el.selectionStart >= el.value.length){
-      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
+      setDate(el.dataset.raw); setDateCarried(false);
+      focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
     }
   } else if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); }   // pilih baris sebelumnya
   else if (k === "ArrowDown"){ selectNext(); e.preventDefault(); }   // pilih baris berikutnya
