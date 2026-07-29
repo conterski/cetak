@@ -72,18 +72,27 @@
   #pad .btn.acc{background:var(--on); color:var(--accent)}
   #pad .btn.dan{background:#fde8e8; color:var(--err)}
   #pad .btn:active{filter:brightness(.92)}
-  /* pratinjau */
-  #preview{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; line-height:1.5;
-           padding:8px 14px 12px; margin:0; overflow-x:auto; min-height:60px}
+  /* ====== pratinjau: digambar sebagai KERTAS ======
+     Lebarnya dikunci tepat selebar hasil cetak (31 karakter + padding), latar
+     putih & bergaris tepi, lalu ditaruh di TENGAH panel lewat margin auto.
+     Satuan ch = lebar satu karakter font monospace, jadi 31ch persis sama
+     dengan lebar kertas 58mm yang dipakai printer. */
+  #preview{--kertas:12px;                       /* padding kiri-kanan kertas */
+           font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+           line-height:1.5; overflow-x:auto; min-height:60px;
+           width:calc(31ch + 2 * var(--kertas) + 2px);   /* +2px = garis tepi */
+           max-width:100%; margin:8px auto; padding:10px var(--kertas);
+           background:#fff; border:1px solid var(--border); border-radius:3px;
+           box-shadow:0 1px 3px rgba(15,20,30,.10), 0 6px 16px rgba(15,20,30,.06)}
+  /* kertas putih perlu latar yang lebih gelap sedikit supaya tepinya terbaca */
+  #previewCard{background:var(--bg)}
   #preview .row{display:inline}
   #preview .row.sel{background:var(--on); color:var(--accent); border-radius:4px}
   /* mode kalkulator: pita jadi jendela tinggi tetap di atas numpad */
   #previewCard.calc{border:0; margin:0; background:transparent}
   #previewCard.calc .cap{display:none}
   /* tinggi diatur JS (layoutCalc); min-height:0 supaya tak menabrak numpad */
-  #previewCard.calc #preview{overflow-y:auto; margin:6px 14px 2px;
-    padding:8px 12px; background:var(--input); border:1px solid var(--border);
-    border-radius:10px; min-height:0}
+  #previewCard.calc #preview{overflow-y:auto; margin:6px auto 2px; min-height:0}
   /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
   #calcKeys{background:var(--bg)}
   body.calc #calcKeys{border-top:1px solid var(--border);
@@ -294,7 +303,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=19"></script>
+<script src="core.js?v=20"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
