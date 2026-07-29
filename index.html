@@ -235,7 +235,7 @@
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=17"></script>
+<script src="core.js?v=18"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -534,6 +534,14 @@ function applyUsedate(){
   $("inDate").style.display = usedate ? "" : "none";
   $("togDate").classList.toggle("act", usedate);
 }
+/* Tanggal baris sebelumnya dibawa ke baris berikutnya: satu pita biasanya
+   satu hari, jadi tak perlu mengetik 4 angka yang sama berulang kali.
+   - tanggal yang terbawa langsung sah -> cukup Enter/angka nominal saja
+   - mau ganti? ketik angka: angka PERTAMA menghapus tanggal bawaan lebih dulu,
+     jadi tidak perlu ⌫ empat kali. */
+let lastDate = "";        // DDMM baris terakhir yang tersimpan
+let dateCarried = false;  // isi kolom Tanggal berasal dari baris sebelumnya
+function carryDate(){ setDate(lastDate); dateCarried = !!lastDate; }
 function moveCaretEnd(el){ const n = el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} }
 function moveCaretStart(el){ try{ el.setSelectionRange(0,0); }catch(e){} }
 /* kolom mana yang sedang menerima angka dari numpad ("amt" | "date") */
@@ -549,6 +557,8 @@ function focusAmt(){ activeField = "amt"; $("inAmt").focus(); }
 /* numpad -> kolom Tanggal: angka mentah, penuh 4 digit langsung lompat ke Nominal */
 function padDateDigit(d){
   const el = $("inDate");
+  // tanggal bawaan dari baris sebelumnya: angka pertama memulai tanggal baru
+  if (dateCarried){ dateCarried = false; el.dataset.raw = ""; el.value = ""; }
   let raw = el.dataset.raw || "";
   if (raw.length >= 4) return;             // sudah penuh: pakai ⌫ untuk mengubah
   raw += d;
@@ -564,6 +574,7 @@ function padDateDigit(d){
    (baris yang sedang diedit, atau baris terakhir termasuk TOTAL/SUB) */
 function backspaceDate(){
   const el = $("inDate");
+  dateCarried = false;               // sudah disunting sendiri, bukan bawaan lagi
   const raw = el.dataset.raw || "";
   if (raw){ el.dataset.raw = raw.slice(0,-1); el.value = el.dataset.raw; return; }
   deleteRowNow();   // Tanggal = kolom paling kiri -> kosong + ⌫ = hapus baris
@@ -575,12 +586,16 @@ function amtToInput(v){
   const k = v / 1000;
   return Number.isInteger(k) ? fmtAmount(k) : String(k);  // hindari pembulatan fmtAmount
 }
-function clearSel(){ sel = null; $("editBar").style.display = "none"; $("inAmt").value = ""; setDate(""); }
+function clearSel(){
+  sel = null; $("editBar").style.display = "none"; $("inAmt").value = "";
+  carryDate();   // baris berikutnya mulai dari tanggal yang sama
+}
 function selectRow(i){
   sel = i;
   const ev = curTape()[i];
   $("inAmt").value = amtToInput(ev[1]);
   setDate(dateToRaw(ev[3] || ""));
+  dateCarried = false;   // tanggal milik baris yang diedit, bukan bawaan
   let no = 0;
   for (let j = 0; j <= i; j++){
     const e2 = curTape()[j];
@@ -625,8 +640,9 @@ function commit(op){
   if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
   if (ribu) v *= 1000;
   // Tanggal aktif -> wajib diisi lengkap (DDMM) sebelum baris bisa disimpan
+  let raw = "";
   if (usedate){
-    const raw = $("inDate").dataset.raw || "";
+    raw = $("inDate").dataset.raw || "";
     if (!dateValid(raw)){
       // sudah 4 angka tapi tidak sah -> kosongkan supaya bisa langsung diketik ulang
       if (raw.length >= 4) setDate("");
@@ -637,10 +653,12 @@ function commit(op){
     setDate(raw);   // pastikan tersimpan sebagai "d/m"
   }
   const ev = ["e", v, op, usedate ? $("inDate").value.trim() : ""];
+  // dicatat SEBELUM clearSel(), karena clearSel() sendiri memakai lastDate
+  lastDate = raw;
   if (sel !== null){ curTape()[sel] = ev; clearSel(); setStat("Baris diperbarui.","ok"); }
   else { curTape().push(ev); setStat("Siap."); }
-  // reset baris berikutnya: kosongkan Nominal & Tanggal; tanggal di-reset tiap baris
-  $("inAmt").value = ""; setDate("");
+  // reset baris berikutnya: Nominal dikosongkan, Tanggal dibawa dari baris ini
+  $("inAmt").value = ""; carryDate();
   if (usedate) focusDate(); else focusAmt();
   refreshCalcHead(); updatePreview(); saveAll();
 }
@@ -1159,17 +1177,9 @@ $("pad").addEventListener("click", e => {
   else if (onDate) { for (const d of k) padDateDigit(d); }   // "00"/"000" -> per angka
   else { el.value += k; liveComma(); }
 });
-/* ---- keyboard fisik (laptop): ketik angka -> kolom Nominal, Enter = + ---- */
-document.addEventListener("keydown", e => {
-  if (mode !== "calc") return;
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const el = $("inAmt"), ae = document.activeElement;
-  // biarkan kolom Tgl (atau input lain) menangani ketikannya sendiri
-  if (ae && ae !== el && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) return;
-  // tak ada kolom yang difokus (mis. habis mengetuk baris pita): ketikan ikut
-  // kolom yang sedang aktif, sama seperti tombol numpad — bukan selalu Nominal
-  if (usedate && activeField === "date"){ focusDate(); dateKey(e); return; }
-  const k = e.key;
+/* ---- aturan tombol untuk kolom Nominal (dipanggil hanya dari juru-antar) ---- */
+function amtKey(e){
+  const el = $("inAmt"), k = e.key;
   // Shift+Enter: lompat dari Nominal kembali ke Tanggal
   if (k === "Enter" && e.shiftKey){ if (usedate) focusDate(); e.preventDefault(); return; }
   // panah kiri di ujung kiri Nominal -> pindah ke Tanggal ("di ujung")
@@ -1180,16 +1190,39 @@ document.addEventListener("keydown", e => {
   if (k === "ArrowRight") return;  // caret normal
   if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); return; }    // pilih baris sebelumnya
   if (k === "ArrowDown"){ selectNext(); e.preventDefault(); return; }  // pilih baris berikutnya
-  if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); el.focus(); e.preventDefault(); }
-  else if (k === "."){ if (!el.value.includes(".")) el.value += "."; el.focus(); e.preventDefault(); }
+  if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); e.preventDefault(); }
+  else if (k === "."){ if (!el.value.includes(".")) el.value += "."; e.preventDefault(); }
   else if (k === "Enter" || k === "+"){ commit("+"); e.preventDefault(); }  // commit atur fokus
   else if (k === "-"){ commit("-"); e.preventDefault(); }
   else if (k === "Backspace"){ backspace(); e.preventDefault(); }      // mundur ke kiri
   else if (k === "Delete"){ deleteFromAmt(); e.preventDefault(); }     // langsung hapus baris
   else if (k === "Escape"){
     if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
-    else { el.value = ""; setDate(""); }
+    else { el.value = ""; lastDate = ""; setDate(""); }
     e.preventDefault();
+  }
+}
+/* ---- SATU juru-antar tombol untuk mode kalkulator ----
+   Tujuan tombol ditentukan HANYA oleh activeField (kolom mana yang sedang
+   dipakai), persis seperti tombol numpad. Sengaja TIDAK memakai
+   document.activeElement untuk memilih kolom: sebagian penangan memindahkan
+   fokus di tengah jalan (angka ke-4 tanggal, Enter, panah kanan), jadi
+   elemen yang fokus saat tombol ditekan bisa berbeda dengan saat diperiksa —
+   dulu itu membuat angka ke-4 tanggal ikut masuk ke Nominal.
+   Karena hanya ada satu penangan, tidak ada lagi urusan urutan/propagasi. */
+document.addEventListener("keydown", e => {
+  if (mode !== "calc") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;   // mis. Ctrl+P: biarkan lewat
+  const amt = $("inAmt"), dte = $("inDate"), ae = document.activeElement;
+  // kontrol lain (pilihan printer, kotak teks, dsb.) mengetik untuk dirinya sendiri
+  if (ae && ae !== amt && ae !== dte &&
+      /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
+  if (usedate && activeField === "date"){
+    if (ae !== dte) focusDate();          // mis. habis mengetuk baris pita
+    dateKey(e);
+  } else {
+    if (ae !== amt) focusAmt();
+    amtKey(e);
   }
 });
 /* ---- kolom Tanggal: saat difokus tampil angka mentah (DDMM), saat ditinggalkan
@@ -1199,42 +1232,35 @@ $("inDate").addEventListener("focus", () => { activeField = "date"; const el=$("
 $("inDate").addEventListener("blur", () => setDate($("inDate").dataset.raw));
 $("inDate").addEventListener("input", () => {
   const el=$("inDate"); el.dataset.raw = el.value.replace(/\D/g,"").slice(0,4); el.value = el.dataset.raw;
+  dateCarried = false;   // disunting sendiri (tempel/ketik bawaan), bukan bawaan
 });
 /* satu tempat aturan tombol kolom Tanggal: dipakai kolomnya sendiri, dan
    dipakai ulang oleh keydown dokumen saat tak ada kolom yang difokus */
 function dateKey(e){
-  if (e.ctrlKey || e.metaKey || e.altKey) return;   // biarkan mis. Ctrl+P lewat
   const el = $("inDate"), k = e.key;
-  /* Tombol yang SUDAH ditangani di sini tidak boleh sampai ke keydown dokumen.
-     Beberapa di antaranya memindahkan fokus ke Nominal (angka ke-4, Enter,
-     panah kanan); tanpa stopPropagation, keydown dokumen melihat fokus yang
-     BARU dan mengira tombol itu ditujukan untuk Nominal — angka ke-4 tanggal
-     jadi ikut masuk ke Nominal, dan Enter langsung menyimpan baris. */
-  const stop = () => { e.preventDefault(); e.stopPropagation(); };
   /* angka selalu lewat padDateDigit, sama seperti tombol numpad. Kolom ini
      dibuat read-only di layar sentuh supaya papan ketik HP/tablet tak muncul —
      ketikan bawaan tidak akan masuk, jadi angkanya harus dimasukkan sendiri.
      Kolom Nominal memang sudah bekerja begini di semua ukuran. */
-  if (/^[0-9]$/.test(k)){ padDateDigit(k); return stop(); }
+  if (/^[0-9]$/.test(k)){ padDateDigit(k); e.preventDefault(); return; }
   if (k === "Enter" && !e.shiftKey){                        // Tanggal -> Nominal
-    setDate(el.dataset.raw); focusAmt(); stop();
+    setDate(el.dataset.raw); focusAmt(); e.preventDefault();
   } else if (k === "ArrowRight"){                            // di ujung kanan -> Nominal
     if (el.selectionStart >= el.value.length){
-      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); stop();
+      setDate(el.dataset.raw); focusAmt(); moveCaretStart($("inAmt")); e.preventDefault();
     }
-  } else if (k === "ArrowUp"){ selectPrev(); stop(); }     // pilih baris sebelumnya
-  else if (k === "ArrowDown"){ selectNext(); stop(); }     // pilih baris berikutnya
+  } else if (k === "ArrowUp"){ selectPrev(); e.preventDefault(); }   // pilih baris sebelumnya
+  else if (k === "ArrowDown"){ selectNext(); e.preventDefault(); }   // pilih baris berikutnya
   else if (k === "Backspace" || k === "Delete"){
     // kolom kosong -> hapus baris pita (mis. baris TOTAL), sama seperti di Nominal
-    backspaceDate(); stop();
+    backspaceDate(); e.preventDefault();
   } else if (k === "Escape"){
     if (sel !== null){ clearSel(); updatePreview(); setStat("Edit dibatalkan."); }
-    else { $("inAmt").value = ""; setDate(""); }
-    stop();
+    else { $("inAmt").value = ""; lastDate = ""; setDate(""); }
+    e.preventDefault();
   }
   // ArrowLeft di ujung kiri: kolom paling kiri, biarkan caret bergerak normal
 }
-$("inDate").addEventListener("keydown", dateKey);
 $("togDate").onclick = () => {
   usedate = !usedate; saveAll(); applyUsedate();
   if (mode === "calc"){
