@@ -355,7 +355,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=23"></script>
+<script src="core.js?v=24"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -529,7 +529,12 @@ function initGrip(){
    melebar -> pratinjau menyempit, dan sebaliknya. calcW = 0 berarti otomatis. */
 const MIN_CALC_W = 280, MIN_PREV_W = 260, AUTO_CALC_W = 360;
 let calcW = parseInt(localStorage.cdp_calcw || "0", 10) || 0;
-let swapped = localStorage.cdp_swap === "1";
+/* Tata letak dua kolom (layar lebar / tablet mendatar): BAWAANNYA pratinjau
+   di kiri, panel isian di kanan. panelRight=false menukarnya jadi panel di
+   kiri. Arti nilai di cdp_swap tidak berubah ("1" = pratinjau kiri), yang
+   berubah hanya bawaannya - jadi pilihan yang sudah pernah disimpan tetap
+   dihormati, termasuk kalau dulu sengaja dipilih panel-di-kiri. */
+let panelRight = localStorage.cdp_swap !== "0";
 
 function layoutStage(){
   const panel = $("panelCalc"), grip = $("colGrip");
@@ -559,7 +564,7 @@ function initColGrip(){
   grip.addEventListener("pointermove", e => {
     if (!dragging) return;
     const dx = e.clientX - startX;
-    calcW = Math.round(startW + (swapped ? -dx : dx));
+    calcW = Math.round(startW + (panelRight ? -dx : dx));
     layoutStage();
     e.preventDefault();
   });
@@ -579,8 +584,8 @@ function initColGrip(){
 }
 /* tukar sisi kiri/kanan (hanya berarti pada tata letak dua kolom) */
 function applySwap(){
-  $("stage").classList.toggle("rev", swapped);   // aturan CSS-nya hanya >=768px
-  $("togSwap").classList.toggle("act", swapped);
+  $("stage").classList.toggle("rev", panelRight);  // aturan CSS-nya hanya >=768px
+  $("togSwap").classList.toggle("act", panelRight);
   $("togSwap").style.display = isDesktop() ? "" : "none";
 }
 /* letak kartu pratinjau: HP+kalkulator -> di atas numpad; selain itu -> kolom kanan */
@@ -1301,9 +1306,9 @@ document.querySelectorAll(".modalClose").forEach(b => b.onclick = closeSettings)
 document.querySelectorAll(".modalBack").forEach(back =>
   back.addEventListener("click", e => { if (e.target === back) closeSettings(); }));
 $("togSwap").onclick = () => {
-  swapped = !swapped; localStorage.cdp_swap = swapped ? "1" : "0";
+  panelRight = !panelRight; localStorage.cdp_swap = panelRight ? "1" : "0";
   applySwap(); layoutStage();
-  setStat(swapped ? "Pratinjau di kiri, panel isian di kanan."
+  setStat(panelRight ? "Pratinjau di kiri, panel isian di kanan."
                   : "Panel isian di kiri, pratinjau di kanan.");
 };
 $("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
