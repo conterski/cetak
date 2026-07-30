@@ -355,7 +355,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=22"></script>
+<script src="core.js?v=23"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -787,9 +787,11 @@ function liveComma(){
   if (raw.includes(".")) f += "." + (dec || "");
   if (f !== el.value) el.value = f;
 }
+/* Mengembalikan true bila baris benar-benar tersimpan - dipakai keyPlus()
+   untuk tahu apakah tekanan "+" berikutnya berarti TOTAL. */
 function commit(op){
   let v = parseAmount($("inAmt").value);
-  if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return; }
+  if (v === null){ if ($("inAmt").value.trim()) setStat("Angka tidak valid.","err"); return false; }
   if (ribu) v *= 1000;
   // Tanggal aktif -> wajib diisi lengkap (DDMM) sebelum baris bisa disimpan
   let raw = "";
@@ -800,7 +802,7 @@ function commit(op){
       if (raw.length >= 4) setDate("");
       setStat("Tanggal wajib diisi: 4 angka DDMM, mis. 0907 = 9/7.","err");
       focusDate();
-      return;
+      return false;
     }
     setDate(raw);   // pastikan tersimpan sebagai "d/m"
   }
@@ -813,6 +815,32 @@ function commit(op){
   $("inAmt").value = ""; carryDate();
   if (usedate) focusDate(); else focusAmt();
   refreshCalcHead(); updatePreview(); saveAll();
+  return true;
+}
+/* ---- "+" dua kali berturut-turut = TOTAL ----
+   Dua tekanan "+" berurutan pada kolom NOMINAL berarti TOTAL. Tekanan pertama
+   biasanya menyimpan baris (Nominal jadi kosong); tekanan kedua tidak ada lagi
+   yang bisa disimpan, jadi diartikan TOTAL.
+
+   Yang mempersenjatai pintasan adalah tekanan "+"-nya sendiri, BUKAN
+   berhasil-tidaknya menyimpan baris. Kalau digantungkan pada penyimpanan
+   baris, TOTAL tak bisa diulang: setelah TOTAL dihapus, tidak ada baris baru
+   untuk disimpan sehingga pintasannya tak pernah aktif lagi.
+
+   Tetap harus BERURUTAN: satu tekanan nyasar tidak berefek, karena keyTot()
+   ikut mencetak bila Auto-cetak aktif. Tombol lain memutus rantainya, dan
+   pintasan ini hanya berlaku saat kolom Nominal yang aktif - menekan "+" di
+   numpad selagi kolom Tanggal aktif tidak akan meng-TOTAL. */
+let plusArmed = false;
+function keyPlus(){
+  const diNominal = !(usedate && activeField === "date");
+  if (diNominal && plusArmed && !$("inAmt").value.trim()){
+    plusArmed = false;
+    keyTot();
+    return;
+  }
+  commit("+");
+  plusArmed = diNominal;
 }
 /* setelah aksi pita, arahkan kursor ke kolom pertama baris berikutnya */
 function focusEntry(){ if (usedate) focusDate(); else focusAmt(); }
@@ -1349,7 +1377,10 @@ $("preview").addEventListener("click", e => {
   const span = e.target.closest(".row");
   // mengetuk baris = mengedit nominalnya; tanpa ini tak ada kolom yang difokus
   // dan ketikan berikutnya bisa masuk ke kolom yang salah
-  if (span && mode === "calc"){ selectRow(parseInt(span.dataset.i)); focusAmt(); }
+  if (span && mode === "calc"){
+    plusArmed = false;                 // memilih baris memutus rantai "+ +"
+    selectRow(parseInt(span.dataset.i)); focusAmt();
+  }
 });
 /* ---- umpan balik tombol numpad: getar, atau bunyi klik bila tak bisa getar ----
    iPhone/iPad TIDAK punya navigator.vibrate, begitu juga PC, jadi di situ yang
@@ -1393,13 +1424,14 @@ $("pad").addEventListener("click", e => {
   padFeedback();                                // getar, atau bunyi klik
 
   const k = b.dataset.k, el = $("inAmt");
+  if (k !== "+") plusArmed = false;     // rantai "+ +" hanya untuk + berurutan
   const onDate = usedate && activeField === "date";
   if (k === "C") { if (onDate){ setDate(""); setDateCarried(false); } else el.value = ""; }
   else if (k === "BS") { if (onDate) backspaceDate(); else backspace(); }
   else if (k === "SUB") keySub();
   else if (k === "TOT") keyTot();
   else if (k === "CA") keyCA();
-  else if (k === "+") commit("+");
+  else if (k === "+") keyPlus();       // dua kali berturut-turut = TOTAL
   else if (k === "-") commit("-");
   else if (k === ".") { if (!onDate && !el.value.includes(".")) el.value += "."; }
   else if (onDate) { for (const d of k) padDateDigit(d); }   // "00"/"000" -> per angka
@@ -1408,6 +1440,9 @@ $("pad").addEventListener("click", e => {
 /* ---- aturan tombol untuk kolom Nominal (dipanggil hanya dari juru-antar) ---- */
 function amtKey(e){
   const el = $("inAmt"), k = e.key;
+  // Enter = "+" di papan ketik fisik, jadi ikut rantai "+ +" -> TOTAL.
+  // Tombol lain memutus rantainya.
+  if (!((k === "Enter" && !e.shiftKey) || k === "+")) plusArmed = false;
   // Shift+Enter: lompat dari Nominal kembali ke Tanggal
   if (k === "Enter" && e.shiftKey){ if (usedate) focusDate(); e.preventDefault(); return; }
   // panah kiri di ujung kiri Nominal -> pindah ke Tanggal ("di ujung")
@@ -1420,7 +1455,7 @@ function amtKey(e){
   if (k === "ArrowDown"){ selectNext(); e.preventDefault(); return; }  // pilih baris berikutnya
   if (/^[0-9]$/.test(k)){ el.value += k; liveComma(); e.preventDefault(); }
   else if (k === "."){ if (!el.value.includes(".")) el.value += "."; e.preventDefault(); }
-  else if (k === "Enter" || k === "+"){ commit("+"); e.preventDefault(); }  // commit atur fokus
+  else if (k === "Enter" || k === "+"){ keyPlus(); e.preventDefault(); }   // 2x = TOTAL
   else if (k === "-"){ commit("-"); e.preventDefault(); }
   else if (k === "Backspace"){ backspace(); e.preventDefault(); }      // mundur ke kiri
   else if (k === "Delete"){ deleteFromAmt(); e.preventDefault(); }     // langsung hapus baris
@@ -1471,6 +1506,10 @@ $("inDate").addEventListener("input", () => {
    dipakai ulang oleh keydown dokumen saat tak ada kolom yang difokus */
 function dateKey(e){
   const el = $("inDate"), k = e.key;
+  /* Enter di sini hanya MENYETUJUI tanggal & pindah ke Nominal - bukan masukan
+     baru - jadi rantai "+ +" dibiarkan hidup: Enter (simpan) → Enter (lewati
+     tanggal) → Enter (TOTAL). Tombol lain memutusnya. */
+  if (!(k === "Enter" && !e.shiftKey)) plusArmed = false;
   /* angka selalu lewat padDateDigit, sama seperti tombol numpad. Kolom ini
      dibuat read-only di layar sentuh supaya papan ketik HP/tablet tak muncul —
      ketikan bawaan tidak akan masuk, jadi angkanya harus dimasukkan sendiri.
