@@ -57,7 +57,7 @@ function parseLine(line, expectedNo){
   let parsed = tryQtyFirst(s);
   if (!parsed && expectedNo != null){
     const t = s.split(/\s+/).filter(Boolean);
-    if (t.length>=2 && /^\d+$/.test(t[0]) && parseInt(t[0])===expectedNo && !tryQtyFirst(s)){
+    if (t.length>=2 && /^\d+$/.test(t[0]) && parseInt(t[0])===expectedNo){
       const rest = t.slice(1).join(" ");
       if (EQ_QTY_RE.test(rest) || tryQtyLast(rest) || tryQtyFirst(rest)){
         s = rest; parsed = tryQtyFirst(s);
@@ -85,8 +85,14 @@ function wrapWords(text, width){
 }
 function pad2(n){ return String(n).padStart(2,"0"); }
 function headerLines(now, cols){
-  const stamp = `${pad2(now.getDate())}/${pad2(now.getMonth()+1)}/${now.getFullYear()} ` +
-                `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const day = pad2(now.getDate()), month = pad2(now.getMonth()+1);
+  const year = String(now.getFullYear());
+  const time = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  // kertas sempit (mis. ukuran cetak "besar" = 15 kolom): pendekkan tahun,
+  // lalu buang tahunnya - urutan yang sama dengan _header_lines() printapp.py
+  let stamp = `${day}/${month}/${year} ${time}`;
+  if (stamp.length > cols) stamp = `${day}/${month}/${year.slice(-2)} ${time}`;
+  if (stamp.length > cols) stamp = `${day}/${month} ${time}`;
   // penempatan persis seperti str.center() Python: sisa ganjil jatuh di KIRI
   const marg = Math.max(0, cols - stamp.length);
   const left = (marg >> 1) + (marg & cols & 1);
@@ -231,6 +237,15 @@ function parseAmount(s){
   const v = parseFloat(s);
   return isNaN(v) ? null : v;
 }
+/* Baca satu baris tempelan jadi angka (null bila bukan angka). Terima juga
+   format Indonesia "1.874.000(,50)" dan awalan "Rp". Dipakai bersama oleh
+   tempelan Ctrl+V di kalkulator dan mode --tape-clipboard di printapp.py,
+   supaya keduanya membaca angka dengan aturan yang sama. */
+function parsePasteAmount(s){
+  s = String(s == null ? "" : s).trim().replace(/^Rp\.?\s*/i, "").replace(/\s/g, "");
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+  return parseAmount(s);
+}
 function fmtAmount(v){
   const neg = v < 0;
   let s = Math.abs(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -247,6 +262,32 @@ function resolveTape(events){
     else if (ev[0]==="t"){ res.push(["t", total, count]); total = 0; count = 0; }
   }
   return [res, total, count];
+}
+/* Geser satu baris nominal melewati baris nominal TETANGGANYA (naik/turun).
+   Bekerja di ruang baris nominal, bukan index mentah: penanda SUB/TOTAL/0 C
+   yang kebetulan ada di antaranya ikut terlewati, jadi satu langkah selalu
+   berarti satu perubahan yang terlihat.
+
+   Nilai subtotal/total tidak ikut dipindah - tidak pernah disimpan;
+   resolveTape() menghitungnya ulang, sehingga kedua kelompok yang
+   terpengaruh (mis. saat melewati garis TOTAL) langsung benar.
+
+   Return [kejadianBaru, indexBaru], atau null bila sudah di ujung / index
+   yang diminta bukan baris nominal. */
+function moveEntryBy(events, index, step){
+  const idx = [];
+  for (let i = 0; i < events.length; i++) if (events[i][0] === "e") idx.push(i);
+  const pos = idx.indexOf(index);
+  if (pos < 0) return null;                                    // bukan baris nominal
+  const tujuanPos = pos + step;
+  if (tujuanPos < 0 || tujuanPos >= idx.length) return null;   // sudah di ujung
+  const out = events.slice();
+  const [ev] = out.splice(index, 1);
+  // index tetangga bergeser satu bila letaknya di belakang yang baru dicabut
+  const tetangga = idx[tujuanPos] - (idx[tujuanPos] > index ? 1 : 0);
+  const sisip = step < 0 ? tetangga : tetangga + 1;
+  out.splice(sisip, 0, ev);
+  return [out, sisip];
 }
 function renderCalcTape(events, numbered, cols, now, headers, zeroc){
   if (zeroc === undefined) zeroc = true;
