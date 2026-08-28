@@ -46,8 +46,13 @@ try{
     --key-edge:rgba(0,0,0,.55); --scrim:rgba(0,0,0,.58);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  /* overscroll-behavior-y: matikan tarik-untuk-muat-ulang. Aplikasi ini
+     menyimpan pita di localStorage tiap perubahan, tapi memuat ulang di
+     tengah pekerjaan tetap mengagetkan - dan tidak pernah disengaja di sini. */
+  html{overscroll-behavior-y:contain}
   body{margin:0; background:var(--bg); color:var(--text);
-       font-family:-apple-system,"Segoe UI",sans-serif; padding-bottom:90px}
+       font-family:-apple-system,"Segoe UI",sans-serif; padding-bottom:90px;
+       overscroll-behavior-y:contain}
   .top{display:flex; align-items:center; gap:8px; padding:12px 14px 6px}
   .top h1{font-size:17px; margin:0; flex:1}
   .btn{border:0; border-radius:10px; cursor:pointer; font-family:inherit}
@@ -133,8 +138,15 @@ try{
            box-shadow:0 1px 3px var(--shadow), 0 6px 16px var(--shadow-soft)}
   /* kertas putih perlu latar yang lebih gelap sedikit supaya tepinya terbaca */
   #previewCard{background:var(--bg)}
-  /* baris nominal bisa ditahan lalu digeser untuk mengubah urutan */
-  #preview .row{display:inline; cursor:grab}
+  /* Baris nominal bisa ditahan lalu digeser untuk mengubah urutan.
+     user-select/touch-callout dipasang PERMANEN, bukan cuma saat menggeser:
+     iOS memutuskan mau menyorot teks atau tidak sejak jari menyentuh, jadi
+     memasangnya setelah baris terangkat sudah terlambat. Cakupannya hanya
+     .row (yang cuma ada di mode kalkulator), jadi teks pratinjau di mode
+     Tabel/Teks polos tetap bisa disorot dan disalin. */
+  #preview .row{display:inline; cursor:grab;
+                user-select:none; -webkit-user-select:none;
+                -webkit-touch-callout:none}
   #preview .row.sel{background:var(--on); color:var(--accent); border-radius:4px}
   /* baris yang sedang diangkat: senada baris terpilih + garis putus-putus */
   #preview .row.drag{background:var(--on); color:var(--accent); border-radius:4px;
@@ -144,8 +156,12 @@ try{
   /* mode kalkulator: pita jadi jendela tinggi tetap di atas numpad */
   #previewCard.calc{border:0; margin:0; background:transparent}
   #previewCard.calc .cap{display:none}
-  /* tinggi diatur JS (layoutCalc); min-height:0 supaya tak menabrak numpad */
-  #previewCard.calc #preview{overflow-y:auto; margin:6px auto 2px; min-height:0}
+  /* tinggi diatur JS (layoutCalc); min-height:0 supaya tak menabrak numpad.
+     overscroll-behavior: pita punya gulungan sendiri; saat mentok jangan
+     merambat ke halaman - di Bluefy itu berlanjut jadi tarik-untuk-muat-ulang
+     dan pita yang belum dicetak ikut hilang dari layar. */
+  #previewCard.calc #preview{overflow-y:auto; margin:6px auto 2px; min-height:0;
+                             overscroll-behavior:contain}
   /* numpad menempel di bawah (di atas bilah CETAK); posisi diatur JS */
   /* latar numpad sedikit lebih gelap dari halaman: tombol putih "mengambang"
      di atasnya tanpa perlu garis tepi */
@@ -361,7 +377,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=25"></script>
+<script src="core.js?v=26"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -619,9 +635,15 @@ function initColGrip(){
    Pratinjau JUGA bisa digulir, jadi gerakan tegak harus dibedakan dulu:
      - tetikus/pena : memindah begitu gerakan lewat AMBANG_GESER px
      - sentuh       : tahan TAHAN_GESER ms dulu; bergerak duluan = menggulir
-   Tangkapan penunjuk dipasang di #preview, BUKAN di span barisnya: pratinjau
-   digambar ulang tiap langkah sehingga span-nya hilang-timbul, sedangkan
-   wadahnya tetap. */
+
+   ATURAN YANG TIDAK BOLEH DILANGGAR (ini pernah lolos sampai ke pengguna):
+   kejadian SENTUH selalu dikirim ke elemen yang disentuh PERTAMA KALI, dan
+   elemen yang sudah lepas dari dokumen tidak menggelembung ke induknya lagi.
+   Jadi span baris yang sedang disentuh WAJIB tetap hidup sepanjang geseran -
+   lihat gambar(). Kalau ia dibuang (mis. lewat pv.innerHTML = ...), penangan
+   touchmove di bawah tak pernah kebagian kejadian, preventDefault() tak
+   pernah jalan, dan peramban mengambil alih: pita ikut tergulir dan di iPhone
+   berlanjut jadi tarik-untuk-muat-ulang. */
 const AMBANG_GESER = 4, TAHAN_GESER = 400, BATAL_GESER = 10, TEPI_GULIR = 24;
 let geserAktif = false;
 let baruSajaGeser = false;   // telan satu "click" yang menyusul pointerup
@@ -630,17 +652,35 @@ function initRowDrag(){
   const pv = $("preview");
   let timer = null, pointerId = null, mulaiY = 0;
   let indexSeret = null, kerja = null, adaPerubahan = false;
+  let spanSeret = null;      // node yang sedang disentuh - lihat gambar()
 
   function lupakan(){
     clearTimeout(timer); timer = null;
     pointerId = null; indexSeret = null; kerja = null; adaPerubahan = false;
+    spanSeret = null;
     geserAktif = false;
     pv.classList.remove("menggeser");
   }
 
+  /* Gambar ulang pita TANPA membuang span yang sedang disentuh: isinya
+     dirangkai di wadah lepas dulu, lalu node aslinya dipakai kembali di
+     susunan yang baru. Dengan begitu penomoran & subtotal tetap berubah
+     langsung sambil digeser, tapi jalur kejadian sentuhnya tidak putus.
+     removeChild/appendChild, bukan replaceChildren(): yang terakhir baru
+     ada di Safari 16, sedangkan Bluefy ikut WebKit bawaan iOS. */
   function gambar(){
     const atas = pv.scrollTop;
-    pv.innerHTML = tapeHtml(kerja, null, indexSeret);
+    const wadah = document.createElement("div");
+    wadah.innerHTML = tapeHtml(kerja, null, indexSeret);
+    const kembar = wadah.querySelector('.row[data-i="' + indexSeret + '"]');
+    if (spanSeret && kembar){
+      spanSeret.textContent = kembar.textContent;
+      spanSeret.className = kembar.className;
+      spanSeret.dataset.i = kembar.dataset.i;   // dicari satuLangkah()
+      kembar.replaceWith(spanSeret);
+    }
+    while (pv.firstChild) pv.removeChild(pv.firstChild);
+    while (wadah.firstChild) pv.appendChild(wadah.firstChild);
     pv.scrollTop = atas;              // jangan melompat saat digambar ulang
   }
 
@@ -695,13 +735,19 @@ function initRowDrag(){
     }
     baruSajaGeser = true;
     lupakan();
+    const atas = pv.scrollTop;
     refreshCalcHead(); updatePreview(); saveAll();
+    pv.scrollTop = atas;      // tetap di tempat; jangan melompat ke bawah
   }
 
   function batalkan(){
     const sedang = geserAktif;
+    const atas = pv.scrollTop;
     lupakan();
-    if (sedang) updatePreview();      // gambar ulang dari urutan yang tersimpan
+    if (sedang){
+      updatePreview();                // gambar ulang dari urutan yang tersimpan
+      pv.scrollTop = atas;            // dan tetap di tempat yang sama
+    }
   }
 
   pv.addEventListener("pointerdown", e => {
@@ -714,6 +760,7 @@ function initRowDrag(){
     // menelan ketukan berikutnya yang sungguh-sungguh.
     baruSajaGeser = false;
     pointerId = e.pointerId;
+    spanSeret = span;                 // harus tetap hidup selama digeser
     indexSeret = +span.dataset.i;
     kerja = curTape().slice();
     adaPerubahan = false;
