@@ -4,9 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Cetak Draft Pesanan</title>
-<!-- tema dipasang SEBELUM halaman digambar, supaya tidak berkedip putih dulu
+<!-- Tema dipasang SEBELUM halaman digambar, supaya tidak berkedip putih dulu
      saat tema gelap dipakai. Pilihan tersimpan di cdp_theme; kalau belum
-     pernah dipilih, ikut pengaturan sistem. -->
+     pernah dipilih, ikut pengaturan sistem.
+     Kunci "cdp_theme" sengaja ditulis apa adanya di sini: skrip ini berjalan
+     sebelum skrip utama, jadi tabel STORE belum ada. Kalau kuncinya berubah,
+     ubah di kedua tempat. -->
 <script>
 try{
   var t = localStorage.cdp_theme;
@@ -377,7 +380,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=26"></script>
+<script src="core.js?v=27"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -385,15 +388,37 @@ const $ = id => document.getElementById(id);
 const statEl = $("stat");
 function setStat(msg, cls){ statEl.textContent = msg; statEl.className = cls || ""; }
 
-let mode = localStorage.cdp_mode || "table";
-if (mode === "excel") mode = "table";   // mode Excel sudah dihapus
-let numbered = localStorage.cdp_num !== "0";
-let headers = localStorage.cdp_head !== "0";
-let autoprint = localStorage.cdp_auto === "1";
-let usedate = localStorage.cdp_usedate === "1";   // kolom tanggal per-baris (default mati)
-let zeroc = localStorage.cdp_zeroc !== "0";       // baris "0 C" di awal tiap pita (default nyala)
-let ribu = localStorage.cdp_ribu === "1";         // ×1000: nominal diketik dalam ribuan (default mati)
-let haptic = localStorage.cdp_haptic !== "0";     // getar/bunyi tiap tombol numpad (default nyala)
+/* ================= pengaturan tersimpan =================
+   Satu-satunya tempat yang menyentuh localStorage. Kunci "cdp_*" adalah DATA
+   yang sudah ada di HP pengguna - namanya tidak boleh diubah, hanya dikumpulkan
+   di sini supaya tidak berserak di seluruh berkas. */
+const STORE = {
+  mode: "cdp_mode", rowNumbers: "cdp_num", headers: "cdp_head",
+  autoPrint: "cdp_auto", useDate: "cdp_usedate", zeroClear: "cdp_zeroc",
+  thousands: "cdp_ribu", haptic: "cdp_haptic", text: "cdp_text",
+  tapes: "cdp_tapes", theme: "cdp_theme", keypadHeight: "cdp_keysh",
+  calcWidth: "cdp_calcw", previewLeft: "cdp_swap", printer: "cdp_printer",
+};
+const MODE_TABLE = "table", MODE_PLAIN = "plain", MODE_CALC = "calc";
+const LEGACY_MODES = {excel: MODE_TABLE};      // mode Excel sudah dihapus
+
+const readText = (key, fallback = "") => localStorage[key] || fallback;
+/* Sakelar disimpan sebagai "1"/"0". Yang bawaannya NYALA hanya mati kalau
+   tertulis "0"; yang bawaannya MATI hanya nyala kalau tertulis "1". */
+const readFlag = (key, defaultOn) =>
+  defaultOn ? localStorage[key] !== "0" : localStorage[key] === "1";
+const writeFlag = (key, on) => { localStorage[key] = on ? "1" : "0"; };
+const readPixels = key => parseInt(localStorage[key] || "0", 10) || 0;
+
+const savedMode = readText(STORE.mode, MODE_TABLE);
+let mode = LEGACY_MODES[savedMode] || savedMode;
+let numbered = readFlag(STORE.rowNumbers, true);
+let headers = readFlag(STORE.headers, true);
+let autoprint = readFlag(STORE.autoPrint, false);
+let usedate = readFlag(STORE.useDate, false);      // kolom tanggal per-baris
+let zeroc = readFlag(STORE.zeroClear, true);       // baris "0 C" di awal tiap pita
+let ribu = readFlag(STORE.thousands, false);       // ×1000: nominal diketik dalam ribuan
+let haptic = readFlag(STORE.haptic, true);         // getar/bunyi tiap tombol numpad
 /* batas riwayat pita: 5 riwayat + 1 pita aktif (sama dengan MAX_TAPES di printapp.py) */
 const MAX_TAPES = 6;
 const TAPE_KINDS = new Set(["e", "s", "c", "t"]);
@@ -412,37 +437,47 @@ function sanitizeTapes(raw){
 }
 let tapes = [[["c"]]], active = 0, sel = null, tapesRusak = false;
 try {
-  const raw = JSON.parse(localStorage.cdp_tapes || "null");
+  const raw = JSON.parse(readText(STORE.tapes, "null"));
   const bersih = sanitizeTapes(raw);
   if (bersih) tapes = bersih;
   else if (raw !== null) tapesRusak = true;
 } catch(e){ tapesRusak = true; }
 active = tapes.length - 1;
-$("txt").value = localStorage.cdp_text || "";
+$("txt").value = readText(STORE.text);
 
 const curTape = () => tapes[active];
 function saveAll(){
-  localStorage.cdp_mode = mode; localStorage.cdp_num = numbered ? "1" : "0";
-  localStorage.cdp_head = headers ? "1" : "0";
-  localStorage.cdp_usedate = usedate ? "1" : "0";
-  localStorage.cdp_zeroc = zeroc ? "1" : "0";
-  localStorage.cdp_ribu = ribu ? "1" : "0";
-  localStorage.cdp_haptic = haptic ? "1" : "0";
-  localStorage.cdp_text = $("txt").value;
-  localStorage.cdp_tapes = JSON.stringify(tapes);
+  localStorage[STORE.mode] = mode;
+  writeFlag(STORE.rowNumbers, numbered);
+  writeFlag(STORE.headers, headers);
+  writeFlag(STORE.useDate, usedate);
+  writeFlag(STORE.zeroClear, zeroc);
+  writeFlag(STORE.thousands, ribu);
+  writeFlag(STORE.haptic, haptic);
+  localStorage[STORE.text] = $("txt").value;
+  localStorage[STORE.tapes] = JSON.stringify(tapes);
 }
 /* ================= pratinjau & UI ================= */
 let lineMap = {};
+/* Pengaturan tampilan yang sama dipakai pratinjau maupun cetak; dikumpulkan
+   di sini supaya tidak ada deretan argumen yang disalin-salin. */
+function draftOptions(){
+  return {showRowNumbers: numbered, columns: COLS, now: new Date(), showHeaders: headers};
+}
+function tapeOptions(){
+  return {...draftOptions(), showZeroClearLine: zeroc};
+}
 function currentDraft(){
-  if (mode === "calc")
-    return renderCalcTape(curTape(), numbered, COLS, new Date(), headers, zeroc)[0];
-  return formatDraft($("txt").value, numbered, COLS, new Date(), mode==="plain", headers);
+  if (mode === MODE_CALC)
+    return renderCalcTape(curTape(), tapeOptions())[0];
+  return formatDraft($("txt").value,
+                     {...draftOptions(), plainText: mode === MODE_PLAIN});
 }
 /* Rangkai HTML pita + isi lineMap. Dipisah dari updatePreview() karena
    penggeseran baris memakainya berkali-kali sambil MENAHAN posisi gulir,
    sedangkan updatePreview() justru yang mengatur posisi gulir. */
 function tapeHtml(events, selIndex, dragIndex){
-  const [text, lmap] = renderCalcTape(events, numbered, COLS, new Date(), headers, zeroc);
+  const [text, lmap] = renderCalcTape(events, tapeOptions());
   lineMap = lmap;
   return text.split("\n").map((l, i) => {
     const ev = lineMap[i];
@@ -455,7 +490,7 @@ function tapeHtml(events, selIndex, dragIndex){
 }
 function updatePreview(){
   const pv = $("preview");
-  if (mode === "calc"){
+  if (mode === MODE_CALC){
     pv.innerHTML = tapeHtml(curTape(), sel, null);
     // baris terbaru selalu terlihat; saat mengedit, gulir ke baris terpilih
     layoutCalc();
@@ -470,6 +505,16 @@ function updatePreview(){
     pv.textContent = currentDraft();
   }
 }
+/* Tangkapan penunjuk ditolak bila kejadiannya buatan (uji) atau penunjuknya
+   sudah lepas. Keduanya tidak mengubah jalannya geseran, jadi diabaikan. */
+function capturePointer(element, pointerId){
+  try { element.setPointerCapture(pointerId); }
+  catch (penunjukTidakAda){ /* geseran tetap jalan lewat kejadian biasa */ }
+}
+function releasePointer(element, pointerId){
+  try { element.releasePointerCapture(pointerId); }
+  catch (sudahLepas){ /* memang sudah tidak tertangkap */ }
+}
 /* ====== layout responsif ====== */
 const mqDesktop = window.matchMedia("(min-width:768px)");
 const isDesktop = () => mqDesktop.matches;
@@ -481,7 +526,7 @@ const isTouch = () => mqTouch.matches;
 /* ---- tema terang/gelap ----
    theme = "" berarti ikut pengaturan sistem; sekali tombol ditekan, pilihan
    pengguna yang dipakai dan disimpan. Kelas warnanya ada di :root[data-theme]. */
-let theme = localStorage.cdp_theme || "";
+let theme = readText(STORE.theme);
 const mqDark = window.matchMedia("(prefers-color-scheme: dark)");
 const isDark = () => theme ? theme === "dark" : mqDark.matches;
 function applyTheme(){
@@ -504,11 +549,11 @@ function layoutDesktop(){
 /* HP: numpad menempel di bawah, tingginya bisa diseret; sisanya untuk pita.
    keysH = 0 berarti otomatis (proporsional terhadap tinggi layar). */
 const MIN_KEYS = 170, MIN_PREVIEW = 120, FLOOR_PREVIEW = 60, GAP = 8, KEYS_RATIO = 0.55;
-let keysH = parseInt(localStorage.cdp_keysh || "0", 10) || 0;
+let keysH = readPixels(STORE.keypadHeight);
 
 function layoutCalc(){
   const keys = $("calcKeys"), pv = $("preview");
-  if (!(mode === "calc" && !isDesktop())){
+  if (!(mode === MODE_CALC && !isDesktop())){
     keys.style.position = keys.style.left = keys.style.right =
       keys.style.bottom = keys.style.zIndex = keys.style.height = "";
     pv.style.height = "";
@@ -543,9 +588,9 @@ function initGrip(){
   const grip = $("keysGrip");
   let startY = 0, startH = 0, dragging = false;
   grip.addEventListener("pointerdown", e => {
-    if (!(mode === "calc" && !isDesktop())) return;
+    if (!(mode === MODE_CALC && !isDesktop())) return;
     dragging = true; startY = e.clientY; startH = $("calcKeys").offsetHeight;
-    try { grip.setPointerCapture(e.pointerId); } catch(_e){}
+    capturePointer(grip, e.pointerId);
     e.preventDefault();
   });
   grip.addEventListener("pointermove", e => {
@@ -557,15 +602,15 @@ function initGrip(){
   const end = e => {
     if (!dragging) return;
     dragging = false;
-    try { grip.releasePointerCapture(e.pointerId); } catch(_e){}
+    releasePointer(grip, e.pointerId);
     keysH = $("calcKeys").offsetHeight;      // simpan nilai yang sudah dibatasi
-    localStorage.cdp_keysh = String(keysH);
+    localStorage[STORE.keypadHeight] = String(keysH);
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
   // ketuk dua kali -> kembali ke tinggi otomatis
   grip.addEventListener("dblclick", () => {
-    keysH = 0; delete localStorage.cdp_keysh; layoutCalc();
+    keysH = 0; delete localStorage[STORE.keypadHeight]; layoutCalc();
     setStat("Tinggi numpad otomatis.");
   });
 }
@@ -573,17 +618,17 @@ function initGrip(){
    Pratinjau memakai flex:1, jadi sisa ruang otomatis jadi miliknya: numpad
    melebar -> pratinjau menyempit, dan sebaliknya. calcW = 0 berarti otomatis. */
 const MIN_CALC_W = 280, MIN_PREV_W = 260, AUTO_CALC_W = 360;
-let calcW = parseInt(localStorage.cdp_calcw || "0", 10) || 0;
+let calcW = readPixels(STORE.calcWidth);
 /* Tata letak dua kolom (layar lebar / tablet mendatar): BAWAANNYA pratinjau
    di kiri, panel isian di kanan. panelRight=false menukarnya jadi panel di
    kiri. Arti nilai di cdp_swap tidak berubah ("1" = pratinjau kiri), yang
    berubah hanya bawaannya - jadi pilihan yang sudah pernah disimpan tetap
    dihormati, termasuk kalau dulu sengaja dipilih panel-di-kiri. */
-let panelRight = localStorage.cdp_swap !== "0";
+let panelRight = readFlag(STORE.previewLeft, true);
 
 function layoutStage(){
   const panel = $("panelCalc"), grip = $("colGrip");
-  const on = isDesktop() && mode === "calc";
+  const on = isDesktop() && mode === MODE_CALC;
   grip.classList.toggle("on", on);
   if (!on){ panel.style.flex = ""; return; }
   // batas: numpad tetap layak dipakai, pratinjau tetap muat 31 karakter
@@ -600,10 +645,10 @@ function initColGrip(){
   const grip = $("colGrip");
   let startX = 0, startW = 0, dragging = false;
   grip.addEventListener("pointerdown", e => {
-    if (!(isDesktop() && mode === "calc")) return;
+    if (!(isDesktop() && mode === MODE_CALC)) return;
     dragging = true; startX = e.clientX;
     startW = $("panelCalc").getBoundingClientRect().width;
-    try { grip.setPointerCapture(e.pointerId); } catch(_e){}
+    capturePointer(grip, e.pointerId);
     e.preventDefault();
   });
   grip.addEventListener("pointermove", e => {
@@ -616,14 +661,14 @@ function initColGrip(){
   const end = e => {
     if (!dragging) return;
     dragging = false;
-    try { grip.releasePointerCapture(e.pointerId); } catch(_e){}
+    releasePointer(grip, e.pointerId);
     calcW = Math.round($("panelCalc").getBoundingClientRect().width);  // simpan hasil yang sudah dibatasi
-    localStorage.cdp_calcw = String(calcW);
+    localStorage[STORE.calcWidth] = String(calcW);
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
   grip.addEventListener("dblclick", () => {
-    calcW = 0; delete localStorage.cdp_calcw; layoutStage();
+    calcW = 0; delete localStorage[STORE.calcWidth]; layoutStage();
     setStat("Lebar numpad otomatis.");
   });
 }
@@ -688,8 +733,9 @@ function initRowDrag(){
     clearTimeout(timer); timer = null;
     geserAktif = true;
     pv.classList.add("menggeser");
-    try { pv.setPointerCapture(pointerId); } catch(_e){}
-    try { getSelection().removeAllRanges(); } catch(_e){}
+    capturePointer(pv, pointerId);
+    try { getSelection().removeAllRanges(); }
+    catch (tanpaSorotan){ /* tak ada sorotan yang perlu dilepas */ }
     clearSel();                       // memindah baris bukan mengeditnya
     plusArmed = false;                // dan bukan kelanjutan rantai "+ +"
     padFeedback();
@@ -751,7 +797,7 @@ function initRowDrag(){
   }
 
   pv.addEventListener("pointerdown", e => {
-    if (mode !== "calc" || geserAktif) return;
+    if (mode !== MODE_CALC || geserAktif) return;
     const span = e.target.closest(".row");
     if (!span) return;
     // Kejadian "click" bawaan menyusul TEPAT sesudah pointerup, jadi kalau
@@ -810,7 +856,7 @@ function applySwap(){
 /* letak kartu pratinjau: HP+kalkulator -> di atas numpad; selain itu -> kolom kanan */
 function placePreview(){
   const pc = $("previewCard");
-  if (mode === "calc" && !isDesktop()){
+  if (mode === MODE_CALC && !isDesktop()){
     pc.classList.add("calc");
     $("panelCalc").insertBefore(pc, $("calcKeys"));
   } else {
@@ -831,7 +877,7 @@ function applyNativeKeyboard(){
   dte.inputMode = ro ? "none" : "numeric";
 }
 function relayout(){
-  document.body.classList.toggle("calc", mode === "calc" && !isDesktop());
+  document.body.classList.toggle("calc", mode === MODE_CALC && !isDesktop());
   applyNativeKeyboard();
   placePreview();
   applySwap();
@@ -844,7 +890,7 @@ function relayout(){
 mqDesktop.addEventListener("change", relayout);
 mqTouch.addEventListener("change", relayout);   // mis. mouse dicabut/dipasang
 const onViewportChange = () => {
-  layoutStage(); layoutDesktop(); if (mode === "calc") layoutCalc();
+  layoutStage(); layoutDesktop(); if (mode === MODE_CALC) layoutCalc();
 };
 window.addEventListener("resize", onViewportChange);
 window.addEventListener("orientationchange", onViewportChange);
@@ -864,7 +910,7 @@ function refreshToggles(){
 }
 function refreshCalcHead(){
   const [, sum, count] = resolveTape(curTape());
-  $("calcTotal").textContent = `Total: ${fmtAmount(sum)} (${count} nota)`;
+  $("calcTotal").textContent = `Total: ${formatAmount(sum)} (${count} nota)`;
   // penanda riwayat dibuat pendek (•) supaya baris navigasi tak melipat;
   // keterangan lengkapnya ada di tooltip
   const hist = active === tapes.length-1 ? "" : " •";
@@ -872,26 +918,26 @@ function refreshCalcHead(){
   $("tapeLbl").title = hist ? "Pita riwayat (bukan yang terbaru)" : "Pita terbaru";
 }
 function applyMode(){
-  $("panelText").style.display = mode === "calc" ? "none" : "";
-  $("panelCalc").style.display = mode === "calc" ? "" : "none";
-  $("capText").textContent = mode === "plain"
+  $("panelText").style.display = mode === MODE_CALC ? "none" : "";
+  $("panelCalc").style.display = mode === MODE_CALC ? "" : "none";
+  $("capText").textContent = mode === MODE_PLAIN
     ? "TEKS POLOS — DICETAK APA ADANYA" : "KETIK PESANAN — SATU BARANG PER BARIS";
-  $("togAuto").style.display = mode === "calc" ? "" : "none";
-  $("btlog").style.display = mode === "calc" ? "none" : "";
-  if (mode === "calc") keyNew(true);   // masuk mode kalkulator -> mulai pita baru
+  $("togAuto").style.display = mode === MODE_CALC ? "" : "none";
+  $("btlog").style.display = mode === MODE_CALC ? "none" : "";
+  if (mode === MODE_CALC) keyNew(true);   // masuk mode kalkulator -> mulai pita baru
   refreshToggles(); refreshCalcHead();
   relayout();   // menempatkan pratinjau (kanan/atas) & mengatur tinggi sesuai layar
   // siap diketik: fokus ke kolom pertama baris (Tanggal bila aktif), di semua
   // ukuran layar. Di layar sempit kolom dibuat read-only, jadi papan ketik HP
   // tetap tidak muncul — sama seperti fokus yang dipasang tiap baris disimpan.
-  if (mode === "calc") focusEntry();
+  if (mode === MODE_CALC) focusEntry();
 }
 /* ================= kolom tanggal: tampilan (logika di core.js) ================= */
 function setDate(raw){
   const el = $("inDate");
   raw = String(raw || "").replace(/\D/g,"").slice(0,4);
   el.dataset.raw = raw;
-  el.value = fmtDate(raw);
+  el.value = formatDateForDisplay(raw);
 }
 function applyUsedate(){
   $("inDate").style.display = usedate ? "" : "none";
@@ -912,8 +958,15 @@ function setDateCarried(on){
   $("inDate").classList.toggle("carried", dateCarried);
 }
 function carryDate(){ setDate(lastDate); setDateCarried(!!lastDate); }
-function moveCaretEnd(el){ const n = el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} }
-function moveCaretStart(el){ try{ el.setSelectionRange(0,0); }catch(e){} }
+/* setSelectionRange melempar pada kolom yang tak mendukung pemilihan teks,
+   dan pada kolom yang belum tergambar. Menaruh kursor gagal tidak mengubah
+   apa pun yang penting, jadi cukup diabaikan - bukan galat yang disembunyikan. */
+function moveCaret(el, position){
+  try { el.setSelectionRange(position, position); }
+  catch (tidakMendukungPemilihan){ /* kursor tetap di tempat bawaannya */ }
+}
+function moveCaretEnd(el){ moveCaret(el, el.value.length); }
+function moveCaretStart(el){ moveCaret(el, 0); }
 /* kolom mana yang sedang menerima angka dari numpad ("amt" | "date") */
 let activeField = "amt";
 /* pindah fokus ke kolom Tanggal & tampilkan angka mentah untuk diedit
@@ -934,7 +987,7 @@ function padDateDigit(d){
   raw += d;
   el.dataset.raw = raw; el.value = raw;
   if (raw.length < 4) return;
-  if (dateValid(raw)){ setDate(raw); focusAmt(); }   // lengkap & sah -> ke Nominal
+  if (isValidDate(raw)){ setDate(raw); focusAmt(); }   // lengkap & sah -> ke Nominal
   else {                                             // tolak langsung, biar bisa diketik ulang
     el.dataset.raw = ""; el.value = "";
     setStat("Tanggal tidak sah: hari 01–31, bulan 01–12.","err");
@@ -958,9 +1011,9 @@ function backspaceDate(){
 /* ================= kalkulator: aksi ================= */
 /* nilai tersimpan -> isi kolom Nominal (saat ×1000 aktif, tampil dalam ribuan) */
 function amtToInput(v){
-  if (!ribu) return fmtAmount(v);
+  if (!ribu) return formatAmount(v);
   const k = v / 1000;
-  return Number.isInteger(k) ? fmtAmount(k) : String(k);  // hindari pembulatan fmtAmount
+  return Number.isInteger(k) ? formatAmount(k) : String(k);  // hindari pembulatan formatAmount
 }
 function clearSel(){
   sel = null; $("editBar").style.display = "none"; $("inAmt").value = "";
@@ -970,7 +1023,7 @@ function selectRow(i){
   sel = i;
   const ev = curTape()[i];
   $("inAmt").value = amtToInput(ev[1]);
-  setDate(dateToRaw(ev[3] || ""));
+  setDate(displayDateToDigits(ev[3] || ""));
   setDateCarried(false);   // tanggal milik baris yang diedit, bukan bawaan
   let no = 0;
   for (let j = 0; j <= i; j++){
@@ -1028,7 +1081,7 @@ function commit(op){
   let raw = "";
   if (usedate){
     raw = $("inDate").dataset.raw || "";
-    if (!dateValid(raw)){
+    if (!isValidDate(raw)){
       // sudah 4 angka tapi tidak sah -> kosongkan supaya bisa langsung diketik ulang
       if (raw.length >= 4) setDate("");
       setStat("Tanggal wajib diisi: 4 angka DDMM, mis. 0907 = 9/7.","err");
@@ -1144,7 +1197,7 @@ function pasteRows(txt){
   focusEntry();
 }
 document.addEventListener("paste", e => {
-  if (mode !== "calc") return;
+  if (mode !== MODE_CALC) return;
   const txt = (e.clipboardData && e.clipboardData.getData("text")) || "";
   if (!txt.trim()) return;
   const multi = txt.trim().split(/\r?\n/).filter(l => l.trim()).length > 1;
@@ -1186,7 +1239,7 @@ async function initBridge(){
   const sel = $("selPrinter");
   sel.style.display = "inline-block";   // CSS bawaannya display:none
   await loadPrinters(j.printer || "");
-  sel.onchange = () => { localStorage.cdp_printer = sel.value; };
+  sel.onchange = () => { localStorage[STORE.printer] = sel.value; };
   setStat(sel.value ? `Siap - printer: ${sel.value}` : "Siap - pilih printer dulu.");
   autoClip();
 }
@@ -1200,7 +1253,7 @@ async function loadPrinters(cfgSaved){
       o.value = o.textContent = p;
       sel.appendChild(o);
     }
-    const want = [localStorage.cdp_printer, cfgSaved, j.default]
+    const want = [localStorage[STORE.printer], cfgSaved, j.default]
       .find(w => w && [...sel.options].some(o => o.value === w));
     if (want) sel.value = want;
   } catch(e){
@@ -1214,7 +1267,7 @@ async function printBridge(draftText){
   btn.disabled = true; setStat("Mengirim...");
   try {
     const r = await fetch("api/print?target=" + encodeURIComponent(target),
-                          {method:"POST", body: escposPayload(draftText || currentDraft())});
+                          {method:"POST", body: buildEscposPayload(draftText || currentDraft())});
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
     setStat(`Terkirim ke "${target}" ✓`,"ok");
@@ -1242,8 +1295,9 @@ async function autoClip(){
     // sel Excel (ber-tab) SELALU dicetak sebagai kolom sejajar apa adanya,
     // tanpa nomor urut tambahan - apa pun mode aplikasi yang tersimpan
     const isTab = j.text.includes("\t");
-    const draft = formatDraft(j.text, isTab ? false : numbered, COLS, new Date(),
-                              isTab || mode === "plain", headers);
+    const draft = formatDraft(j.text, {...draftOptions(),
+                                      showRowNumbers: isTab ? false : numbered,
+                                      plainText: isTab || mode === MODE_PLAIN});
     $("preview").textContent = draft;   // perlihatkan apa yang dicetak
     await printBridge(draft);
   } catch(e){ setStat("Gagal membaca clipboard: " + e.message, "err"); }
@@ -1329,6 +1383,17 @@ const BLE_SERVICES = [
 ];
 let bleDevice = null, bleChar = null;
 
+/* Bluefy kadang gagal menyambung pada percobaan pertama; mencoba ulang
+   beberapa kali jauh lebih andal daripada langsung menyerah. */
+const BLE_CONNECT_ATTEMPTS = 3;
+const BLE_RETRY_DELAY_MS = 900;
+/* Printer thermal punya batas ukuran paket. 100 byte aman di kebanyakan
+   perangkat; kalau gagal, dicoba lagi dengan potongan yang jauh lebih kecil. */
+const BLE_CHUNK_BYTES = 100;
+const BLE_SMALL_CHUNK_BYTES = 20;
+const BLE_CHUNK_PAUSE_MS = 25;
+const BLE_RETRY_PAUSE_MS = 300;
+
 function blog(msg){
   const el = $("btlogtxt");
   el.textContent += msg + "\n";
@@ -1348,6 +1413,86 @@ function isKnownWrite(uuid){
   const u = uuid.toLowerCase();
   return WRITE_CHARS.some(w => u === w || u.startsWith("0000" + w + "-") || u.includes(w));
 }
+/* Minta pengguna memilih printer, sekali saja per sesi. */
+async function pickPrinterDevice(){
+  blog("--- " + new Date().toLocaleTimeString() + " ---");
+  blog("Membuka daftar perangkat...");
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true, optionalServices: BLE_SERVICES });
+  blog("Dipilih: " + (device.name || "(tanpa nama)"));
+  device.addEventListener("gattserverdisconnected", onPrinterDisconnected);
+  return device;
+}
+
+function onPrinterDisconnected(){
+  bleChar = null;
+  $("btnBT").classList.remove("on");
+  $("btnBT").innerHTML = "&#9679; Hubungkan";
+  blog("Perangkat terputus.");
+}
+
+/* Sambungan GATT, dengan percobaan ulang. Melempar galat terakhir bila
+   semuanya gagal. */
+async function openGattServer(device){
+  if (device.gatt.connected){
+    blog("GATT sudah tersambung, dipakai ulang.");
+    return device.gatt;
+  }
+  let lastError = null;
+  for (let attempt = 1; attempt <= BLE_CONNECT_ATTEMPTS; attempt++){
+    try {
+      blog("Menghubungkan GATT (percobaan " + attempt + ")...");
+      return await device.gatt.connect();
+    } catch(error){
+      lastError = error;
+      blog("  gagal: " + error.name + " - " + error.message);
+      // Bluefy kadang melempar "already registered/connected" padahal
+      // sambungannya sudah aktif -> pakai saja yang ada.
+      if (/already|registered|connected/i.test((error.name || "") + " " + (error.message || ""))){
+        blog("  (dianggap sudah tersambung)");
+        return device.gatt;
+      }
+      await sleep(BLE_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
+/* Karakteristik yang dipakai menulis: yang JELAS bisa tulis lebih dulu, lalu
+   yang UUID-nya dikenal, baru apa saja. .properties tak bisa dipercaya di
+   Bluefy, jadi urutan itu yang menyelamatkan. */
+async function findWriteCharacteristic(server){
+  let services = [];
+  try { services = await server.getPrimaryServices(); }
+  catch(error){ blog("getPrimaryServices: " + error.name + " - " + error.message); }
+  blog("Layanan terlihat: " + services.length);
+
+  let writable = null, knownUuid = null, firstSeen = null;
+  for (const service of services){
+    blog("svc " + service.uuid);
+    let characteristics = [];
+    try { characteristics = await service.getCharacteristics(); }
+    catch(error){ blog("  (karakteristik: " + error.message + ")"); continue; }
+    for (const characteristic of characteristics){
+      blog("  chr " + characteristic.uuid + " [" + propsOf(characteristic) + "]");
+      const props = characteristic.properties || {};
+      if ((props.writeWithoutResponse || props.write) && !writable) writable = characteristic;
+      if (isKnownWrite(characteristic.uuid) && !knownUuid) knownUuid = characteristic;
+      if (!firstSeen) firstSeen = characteristic;
+    }
+  }
+  return writable || knownUuid || firstSeen;
+}
+
+function reportConnectFailure(error){
+  if (error && error.name === "NotFoundError"){ setStat("Dibatalkan."); return; }
+  blog("ERROR: " + (error ? error.name + " - " + error.message : "tidak diketahui"));
+  setStat("Gagal terhubung (" + (error ? error.name : "?") + ") - buka LOG BLUETOOTH "
+          + "di bawah dan kirimkan isinya.","err");
+  $("btlog").open = true;
+  bleDevice = null;              // mulai bersih pada percobaan berikutnya
+}
+
 async function connectBT(){
   if (!navigator.bluetooth){
     setStat("Bluetooth tidak tersedia. Buka halaman ini di aplikasi Bluefy.","err");
@@ -1355,62 +1500,10 @@ async function connectBT(){
   }
   bleChar = null;
   try {
-    if (!bleDevice){
-      blog("--- " + new Date().toLocaleTimeString() + " ---");
-      blog("Membuka daftar perangkat...");
-      bleDevice = await navigator.bluetooth.requestDevice({
-        acceptAllDevices: true, optionalServices: BLE_SERVICES });
-      blog("Dipilih: " + (bleDevice.name || "(tanpa nama)"));
-      bleDevice.addEventListener("gattserverdisconnected", () => {
-        bleChar = null; $("btnBT").classList.remove("on");
-        $("btnBT").innerHTML = "&#9679; Hubungkan";
-        blog("Perangkat terputus.");
-      });
-    }
-    let server = null, lastErr = null;
-    if (bleDevice.gatt.connected){            // sudah tersambung -> pakai ulang
-      server = bleDevice.gatt;
-      blog("GATT sudah tersambung, dipakai ulang.");
-    }
-    for (let i = 1; i <= 3 && !server; i++){
-      try {
-        blog("Menghubungkan GATT (percobaan " + i + ")...");
-        server = await bleDevice.gatt.connect();
-      } catch(e){
-        lastErr = e;
-        blog("  gagal: " + e.name + " - " + e.message);
-        // Bluefy kadang melempar "already registered/connected" padahal
-        // sambungan sudah aktif -> pakai saja sambungan yang ada.
-        if (/already|registered|connected/i.test((e.name || "") + " " + (e.message || ""))){
-          blog("  (dianggap sudah tersambung)");
-          server = bleDevice.gatt;
-          break;
-        }
-        await sleep(900);
-      }
-    }
-    if (!server) throw lastErr;
+    if (!bleDevice) bleDevice = await pickPrinterDevice();
+    const server = await openGattServer(bleDevice);
     blog("GATT terhubung. Mencari layanan...");
-    let services = [];
-    try { services = await server.getPrimaryServices(); }
-    catch(e){ blog("getPrimaryServices: " + e.name + " - " + e.message); }
-    blog("Layanan terlihat: " + services.length);
-    let byProp = null, byName = null, anyChar = null;
-    for (const s of services){
-      blog("svc " + s.uuid);
-      let chars = [];
-      try { chars = await s.getCharacteristics(); }
-      catch(e){ blog("  (karakteristik: " + e.message + ")"); continue; }
-      for (const c of chars){
-        blog("  chr " + c.uuid + " [" + propsOf(c) + "]");
-        const p = c.properties || {};
-        if ((p.writeWithoutResponse || p.write) && !byProp) byProp = c;
-        if (isKnownWrite(c.uuid) && !byName) byName = c;
-        if (!anyChar) anyChar = c;
-      }
-    }
-    // pilih: yang jelas bisa tulis > yang UUID-nya dikenal > apa saja
-    bleChar = byProp || byName || anyChar;
+    bleChar = await findWriteCharacteristic(server);
     if (!bleChar){
       blog("Tidak ditemukan jalur tulis.");
       setStat("Layanan printer tidak dikenali - buka LOG BLUETOOTH di bawah "
@@ -1423,13 +1516,8 @@ async function connectBT(){
     $("btnBT").innerHTML = "&#9679; " + (bleDevice.name || "Terhubung");
     setStat("Printer terhubung.","ok");
     return true;
-  } catch(e){
-    if (e && e.name === "NotFoundError"){ setStat("Dibatalkan."); return false; }
-    blog("ERROR: " + (e ? e.name + " - " + e.message : "tidak diketahui"));
-    setStat("Gagal terhubung (" + (e ? e.name : "?") + ") - buka LOG BLUETOOTH "
-            + "di bawah dan kirimkan isinya.","err");
-    $("btlog").open = true;
-    bleDevice = null;  // mulai bersih pada percobaan berikutnya
+  } catch(error){
+    reportConnectFailure(error);
     return false;
   }
 }
@@ -1444,31 +1532,34 @@ async function writeOne(part){
   await bleChar.writeValue(part); bleWrite._m = "wr";
 }
 async function bleWrite(bytes){
-  let chunk = 100;
+  let chunkSize = BLE_CHUNK_BYTES;
   for (let attempt = 0; attempt < 2; attempt++){
     try {
-      for (let i = 0; i < bytes.length; i += chunk){
-        await writeOne(bytes.slice(i, i + chunk));
-        await sleep(25);
+      for (let start = 0; start < bytes.length; start += chunkSize){
+        await writeOne(bytes.slice(start, start + chunkSize));
+        await sleep(BLE_CHUNK_PAUSE_MS);
       }
       blog("Cetak terkirim (" + bytes.length + " byte).");
       return;
-    } catch(e){
-      blog("tulis gagal (potongan " + chunk + "): " + e.name + " - " + e.message);
-      if (attempt === 0){ chunk = 20; bleWrite._m = null; await sleep(300); }
-      else throw e;
+    } catch(error){
+      blog("tulis gagal (potongan " + chunkSize + "): " + error.name + " - " + error.message);
+      if (attempt > 0) throw error;
+      // sekali lagi dengan potongan kecil, dan cara tulis dipilih ulang
+      chunkSize = BLE_SMALL_CHUNK_BYTES;
+      bleWrite._m = null;
+      await sleep(BLE_RETRY_PAUSE_MS);
     }
   }
 }
 /* ================= tombol utama ================= */
 async function doPrint(skipConfirm){
-  const hasContent = mode === "calc" ? curTape().some(ev => ev[0]==="e")
+  const hasContent = mode === MODE_CALC ? curTape().some(ev => ev[0]==="e")
     : $("txt").value.trim() !== "";
   if (!hasContent){ setStat("Tidak ada yang dicetak.","err"); return; }
   let summary;
-  if (mode === "calc"){
+  if (mode === MODE_CALC){
     const [res, sum] = resolveTape(curTape());
-    summary = `${res.filter(o=>o[0]==="e").length} baris, total ${fmtAmount(sum)}`;
+    summary = `${res.filter(o=>o[0]==="e").length} baris, total ${formatAmount(sum)}`;
   } else {
     summary = `${$("txt").value.split("\n").filter(l=>l.trim()).length} baris`;
   }
@@ -1482,7 +1573,7 @@ async function doPrint(skipConfirm){
   const btn = $("btnPrint");
   btn.disabled = true; setStat("Mengirim...");
   try {
-    await bleWrite(escposPayload(currentDraft()));
+    await bleWrite(buildEscposPayload(currentDraft()));
     setStat("Terkirim ✓","ok");
     saveAll();
   } catch(e){
@@ -1490,10 +1581,10 @@ async function doPrint(skipConfirm){
   } finally { btn.disabled = false; }
 }
 function doClear(){
-  const hasContent = mode === "calc" ? curTape().some(ev => ev[0]!=="c")
+  const hasContent = mode === MODE_CALC ? curTape().some(ev => ev[0]!=="c")
     : $("txt").value.trim() !== "";
   if (hasContent && !confirm("Hapus isi tampilan ini?")) return;
-  if (mode === "calc"){ curTape().length = 0; curTape().push(["c"]); clearSel(); }
+  if (mode === MODE_CALC){ curTape().length = 0; curTape().push(["c"]); clearSel(); }
   else $("txt").value = "";
   refreshCalcHead(); updatePreview(); saveAll(); setStat("Siap.");
 }
@@ -1519,7 +1610,7 @@ function closeSettings(){
   $(openedBy).setAttribute("aria-expanded", "false");
   const gear = openedBy; openedBy = null;
   // kembalikan kursor ke tempat kerja: kolom isian kalkulator, atau tombol gerigi
-  if (mode === "calc") focusEntry(); else $(gear).focus();
+  if (mode === MODE_CALC) focusEntry(); else $(gear).focus();
 }
 function openSettings(){ openModal("setBack", "btnGear"); }
 $("btnGear").onclick = openSettings;
@@ -1529,12 +1620,12 @@ document.querySelectorAll(".modalClose").forEach(b => b.onclick = closeSettings)
 document.querySelectorAll(".modalBack").forEach(back =>
   back.addEventListener("click", e => { if (e.target === back) closeSettings(); }));
 $("togSwap").onclick = () => {
-  panelRight = !panelRight; localStorage.cdp_swap = panelRight ? "1" : "0";
+  panelRight = !panelRight; writeFlag(STORE.previewLeft, panelRight);
   applySwap(); layoutStage();
   setStat(panelRight ? "Pratinjau di kiri, panel isian di kanan."
                   : "Panel isian di kiri, pratinjau di kanan.");
 };
-$("togAuto").onclick = () => { autoprint = !autoprint; localStorage.cdp_auto = autoprint ? "1" : "0"; refreshToggles();
+$("togAuto").onclick = () => { autoprint = !autoprint; writeFlag(STORE.autoPrint, autoprint); refreshToggles();
   setStat(autoprint ? "Auto-cetak aktif: TOTAL langsung mencetak." : "Auto-cetak mati."); };
 $("txt").addEventListener("input", () => { updatePreview(); saveAll(); });
 /* tempelan di kotak teks:
@@ -1551,8 +1642,8 @@ $("txt").addEventListener("paste", e => {
     }
   }
   const t = cb.getData("text");
-  if (t && t.includes("\t") && mode === "table"){
-    mode = "plain"; saveAll(); applyMode();
+  if (t && t.includes("\t") && mode === MODE_TABLE){
+    mode = MODE_PLAIN; saveAll(); applyMode();
     setStat("Tempelan Excel terdeteksi - pindah ke Teks polos agar kolom sejajar.");
   }
 });
@@ -1570,7 +1661,7 @@ $("ocrFile").addEventListener("change", () => {
 });
 $("btnTheme").onclick = () => {
   theme = isDark() ? "light" : "dark";
-  localStorage.cdp_theme = theme;
+  localStorage[STORE.theme] = theme;
   applyTheme();
   setStat(isDark() ? "Tema gelap." : "Tema terang.");
 };
@@ -1608,7 +1699,7 @@ $("preview").addEventListener("click", e => {
   const span = e.target.closest(".row");
   // mengetuk baris = mengedit nominalnya; tanpa ini tak ada kolom yang difokus
   // dan ketikan berikutnya bisa masuk ke kolom yang salah
-  if (span && mode === "calc"){
+  if (span && mode === MODE_CALC){
     plusArmed = false;                 // memilih baris memutus rantai "+ +"
     selectRow(parseInt(span.dataset.i)); focusAmt();
   }
@@ -1710,7 +1801,7 @@ document.addEventListener("keydown", e => {
     if (e.key === "Escape"){ closeSettings(); e.preventDefault(); }
     return;
   }
-  if (mode !== "calc") return;
+  if (mode !== MODE_CALC) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;   // mis. Ctrl+P: biarkan lewat
   const amt = $("inAmt"), dte = $("inDate"), ae = document.activeElement;
   // kontrol lain (pilihan printer, kotak teks, dsb.) mengetik untuk dirinya sendiri
@@ -1768,7 +1859,7 @@ function dateKey(e){
 }
 $("togDate").onclick = () => {
   usedate = !usedate; saveAll(); applyUsedate();
-  if (mode === "calc"){
+  if (mode === MODE_CALC){
     if (usedate){ setDate(""); focusDate(); } else $("inAmt").focus();
     setStat(usedate ? "Kolom tanggal aktif (d/m). Enter: ke Nominal, Shift+Enter: kembali."
                     : "Kolom tanggal mati.");
@@ -1778,7 +1869,7 @@ $("togRibu").onclick = () => {
   ribu = !ribu; saveAll(); refreshToggles();
   // sedang mengedit baris: sesuaikan tampilan Nominal dengan mode baru
   if (sel !== null) $("inAmt").value = amtToInput(curTape()[sel][1]);
-  if (mode === "calc"){
+  if (mode === MODE_CALC){
     focusAmt();
     setStat(ribu ? "×1000 aktif: angka yang diketik dikalikan 1000." : "×1000 mati.");
   }
