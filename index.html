@@ -380,7 +380,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=27"></script>
+<script src="core.js?v=28"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -402,13 +402,48 @@ const STORE = {
 const MODE_TABLE = "table", MODE_PLAIN = "plain", MODE_CALC = "calc";
 const LEGACY_MODES = {excel: MODE_TABLE};      // mode Excel sudah dihapus
 
-const readText = (key, fallback = "") => localStorage[key] || fallback;
+/* localStorage TIDAK selalu tersedia. Di mode penyamaran Safari/Bluefy
+   menulis ke sana melempar, dan kalau kuki diblokir sama sekali, menyentuh
+   objeknya saja sudah melempar. Aplikasi harus tetap jalan: yang hilang cuma
+   penyimpanan pengaturan, bukan kemampuan mencetak.
+
+   Membaca yang gagal -> pakai nilai bawaan, diam saja (pengguna sudah melihat
+   sendiri pitanya kosong). Menulis yang gagal -> beri tahu SEKALI: itu yang
+   perlu diketahui, karena pekerjaannya tidak akan tersimpan. */
+let storageWarningShown = false;
+
+function reportStorageUnavailable(){
+  if (storageWarningShown) return;
+  storageWarningShown = true;
+  // Ditunda satu putaran: penangan yang sedang berjalan biasanya menutup
+  // pekerjaannya dengan setStat sendiri ("Siap.", "Semua baris dihapus."),
+  // dan tanpa penundaan ini peringatannya langsung tertimpa - pengguna tak
+  // akan pernah melihatnya.
+  setTimeout(() => setStat("Pengaturan & riwayat pita tidak bisa disimpan di "
+                           + "mode ini (penyamaran?) - mencetak tetap bisa.",
+                           "err"), 0);
+}
+
+function readStored(key){
+  try { return localStorage[key]; }
+  catch (tanpaPenyimpanan){ return undefined; }
+}
+function writeStored(key, value){
+  try { localStorage[key] = value; }
+  catch (tanpaPenyimpanan){ reportStorageUnavailable(); }
+}
+function removeStored(key){
+  try { delete localStorage[key]; }
+  catch (tanpaPenyimpanan){ reportStorageUnavailable(); }
+}
+
+const readText = (key, fallback = "") => readStored(key) || fallback;
 /* Sakelar disimpan sebagai "1"/"0". Yang bawaannya NYALA hanya mati kalau
    tertulis "0"; yang bawaannya MATI hanya nyala kalau tertulis "1". */
 const readFlag = (key, defaultOn) =>
-  defaultOn ? localStorage[key] !== "0" : localStorage[key] === "1";
-const writeFlag = (key, on) => { localStorage[key] = on ? "1" : "0"; };
-const readPixels = key => parseInt(localStorage[key] || "0", 10) || 0;
+  defaultOn ? readStored(key) !== "0" : readStored(key) === "1";
+const writeFlag = (key, on) => writeStored(key, on ? "1" : "0");
+const readPixels = key => parseInt(readStored(key) || "0", 10) || 0;
 
 const savedMode = readText(STORE.mode, MODE_TABLE);
 let mode = LEGACY_MODES[savedMode] || savedMode;
@@ -447,15 +482,15 @@ $("txt").value = readText(STORE.text);
 
 const curTape = () => tapes[active];
 function saveAll(){
-  localStorage[STORE.mode] = mode;
+  writeStored(STORE.mode, mode);
   writeFlag(STORE.rowNumbers, numbered);
   writeFlag(STORE.headers, headers);
   writeFlag(STORE.useDate, usedate);
   writeFlag(STORE.zeroClear, zeroc);
   writeFlag(STORE.thousands, ribu);
   writeFlag(STORE.haptic, haptic);
-  localStorage[STORE.text] = $("txt").value;
-  localStorage[STORE.tapes] = JSON.stringify(tapes);
+  writeStored(STORE.text, $("txt").value);
+  writeStored(STORE.tapes, JSON.stringify(tapes));
 }
 /* ================= pratinjau & UI ================= */
 let lineMap = {};
@@ -604,13 +639,13 @@ function initGrip(){
     dragging = false;
     releasePointer(grip, e.pointerId);
     keysH = $("calcKeys").offsetHeight;      // simpan nilai yang sudah dibatasi
-    localStorage[STORE.keypadHeight] = String(keysH);
+    writeStored(STORE.keypadHeight, String(keysH));
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
   // ketuk dua kali -> kembali ke tinggi otomatis
   grip.addEventListener("dblclick", () => {
-    keysH = 0; delete localStorage[STORE.keypadHeight]; layoutCalc();
+    keysH = 0; removeStored(STORE.keypadHeight); layoutCalc();
     setStat("Tinggi numpad otomatis.");
   });
 }
@@ -663,12 +698,12 @@ function initColGrip(){
     dragging = false;
     releasePointer(grip, e.pointerId);
     calcW = Math.round($("panelCalc").getBoundingClientRect().width);  // simpan hasil yang sudah dibatasi
-    localStorage[STORE.calcWidth] = String(calcW);
+    writeStored(STORE.calcWidth, String(calcW));
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
   grip.addEventListener("dblclick", () => {
-    calcW = 0; delete localStorage[STORE.calcWidth]; layoutStage();
+    calcW = 0; removeStored(STORE.calcWidth); layoutStage();
     setStat("Lebar numpad otomatis.");
   });
 }
@@ -1239,7 +1274,7 @@ async function initBridge(){
   const sel = $("selPrinter");
   sel.style.display = "inline-block";   // CSS bawaannya display:none
   await loadPrinters(j.printer || "");
-  sel.onchange = () => { localStorage[STORE.printer] = sel.value; };
+  sel.onchange = () => { writeStored(STORE.printer, sel.value); };
   setStat(sel.value ? `Siap - printer: ${sel.value}` : "Siap - pilih printer dulu.");
   autoClip();
 }
@@ -1253,7 +1288,7 @@ async function loadPrinters(cfgSaved){
       o.value = o.textContent = p;
       sel.appendChild(o);
     }
-    const want = [localStorage[STORE.printer], cfgSaved, j.default]
+    const want = [readText(STORE.printer), cfgSaved, j.default]
       .find(w => w && [...sel.options].some(o => o.value === w));
     if (want) sel.value = want;
   } catch(e){
@@ -1661,7 +1696,7 @@ $("ocrFile").addEventListener("change", () => {
 });
 $("btnTheme").onclick = () => {
   theme = isDark() ? "light" : "dark";
-  localStorage[STORE.theme] = theme;
+  writeStored(STORE.theme, theme);
   applyTheme();
   setStat(isDark() ? "Tema gelap." : "Tema terang.");
 };
