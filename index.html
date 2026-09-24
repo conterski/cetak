@@ -380,7 +380,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=28"></script>
+<script src="core.js?v=29"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -1164,12 +1164,17 @@ function keyPlus(){
 /* setelah aksi pita, arahkan kursor ke kolom pertama baris berikutnya */
 function focusEntry(){ if (usedate) focusDate(); else focusAmt(); }
 function keySub(){ clearSel(); curTape().push(["s"]); updatePreview(); saveAll(); focusEntry(); }
-function keyTot(){
-  clearSel();
+/* TOTAL: tutup pita dengan (N nota), garis dan total. false bila pita kosong. */
+function closeTape(){
   const [, , count] = resolveTape(curTape());
-  if (!count) return;
+  if (!count) return false;
   curTape().push(["t"]);
   refreshCalcHead(); updatePreview(); saveAll();
+  return true;
+}
+function keyTot(){
+  clearSel();
+  if (!closeTape()) return;
   focusEntry();
   if (autoprint) doPrint(true);  // langsung cetak jika Auto-cetak aktif
 }
@@ -1314,6 +1319,18 @@ async function printBridge(draftText){
       : e.message;
     setStat("Gagal mencetak: " + msg, "err");
   } finally { btn.disabled = false; }
+}
+/* tombol Print di TokoTally: halaman dibuka dengan ?tape=<nominal per baris>
+   -> mode kalkulator dengan pita baru ("0 C"), nominalnya sudah terisi,
+   tinggal tekan CETAK. Pita sebelumnya tetap tersimpan di riwayat. */
+function loadTapeFromUrl(){
+  const amounts = new URLSearchParams(location.search).get("tape");
+  if (!amounts) return;
+  history.replaceState(null, "", location.pathname);  // refresh tidak menambah ulang
+  mode = MODE_CALC; saveAll(); applyMode();            // applyMode -> keyNew: pita baru
+  pasteRows(amounts);
+  // tanpa Auto-cetak: Bluetooth hanya boleh disambung dari ketukan pengguna
+  if (closeTape()) setStat("Pita dari TokoTally siap - tekan CETAK.", "ok");
 }
 /* shortcut "Cetak dari Excel": halaman dibuka dengan ?autoclip=1 ->
    ambil isi clipboard dari jembatan, format, langsung cetak.
@@ -1913,6 +1930,7 @@ $("togRibu").onclick = () => {
 applyTheme();
 initGrip(); initColGrip(); initRowDrag();
 applyUsedate(); refreshToggles(); applyMode();
+loadTapeFromUrl();   // bukan di initBridge: di iPhone jembatan tidak pernah ada
 // peringatan dipasang SESUDAH initBridge selesai: ia menulis status sendiri
 // secara asinkron dan akan menimpa pesan ini kalau dipasang lebih dulu
 initBridge().finally(() => {
