@@ -380,7 +380,7 @@ try{
 </div>
 
 <!-- SEMUA logika parsing/format ada di core.js (dibagi PC & iPhone) -->
-<script src="core.js?v=29"></script>
+<script src="core.js?v=30"></script>
 <script>
 "use strict";
 /* ================= status & state ================= */
@@ -1539,8 +1539,12 @@ async function findWriteCharacteristic(server){
 function reportConnectFailure(error){
   if (error && error.name === "NotFoundError"){ setStat("Dibatalkan."); return; }
   blog("ERROR: " + (error ? error.name + " - " + error.message : "tidak diketahui"));
-  setStat("Gagal terhubung (" + (error ? error.name : "?") + ") - buka LOG BLUETOOTH "
-          + "di bawah dan kirimkan isinya.","err");
+  // Pilihan printer lain tak bisa dibuka otomatis di sini: browser hanya
+  // mengizinkan daftar Bluetooth tepat sesudah ketukan, dan percobaan ulang
+  // tadi sudah melewati batas itu. bleDevice dikosongkan di bawah, jadi
+  // ketukan CETAK berikutnya membuka daftar semua printer yang ada.
+  setStat("Printer tidak tersambung (" + (error ? error.name : "?") + ") - tekan "
+          + "CETAK lagi untuk memilih printer lain.","err");
   $("btlog").open = true;
   bleDevice = null;              // mulai bersih pada percobaan berikutnya
 }
